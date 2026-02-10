@@ -1,0 +1,21 @@
+system:
+  name: "Resona MVP"
+  version: "0.1.0"
+  
+  compute:
+    tts_device: "cuda"
+    embed_device: "cpu"
+    precision: "float16"
+
+paths:
+  db_file: "data/resona.db"
+  assets_dir: "data/assets"
+  temp_dir: "data/tmp"
+
+models:
+  tts:
+    repo_id: "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign"
+    sample_rate: 24000
+  
+  semantic:
+    repo_id: "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"

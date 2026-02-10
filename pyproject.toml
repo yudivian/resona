@@ -3,22 +3,24 @@ name = "resona-mvp"
 version = "0.1.0"
 description = "Voice Design CAD Tool - MVP"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.12, <3.13"
 dependencies = [
     "streamlit>=1.38.0",
     "torch>=2.4.0",
     "torchaudio>=2.4.0",
     "transformers>=4.44.0",
     "accelerate>=0.33.0",
-    "flash-attn>=2.6.0",      
     "numpy>=1.26.0",
-    "qwen-tts",               
-    "fastembed>=0.3.0",       
-    "beaver-db>=0.18.0",  
-    "soundfile>=0.12.0",      
-    "pydantic>=2.8.0",        
-    "python-dotenv>=1.0.0",   
-    "pyyaml>=6.0"             
+    "flash-attn>=2.6.3", 
+    "qwen-tts",
+    "fastembed>=0.3.0",
+    "beaver-db>=0.18.0",
+    "soundfile>=0.12.0",
+    "pydantic>=2.8.0",
+    "python-dotenv>=1.0.0",
+    "pyyaml>=6.0",
+    "numba>=0.60.0", 
+    "llvmlite>=0.43.0",
 ]
 
 [tool.uv.sources]

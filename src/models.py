@@ -1,6 +1,7 @@
 import time
 import uuid
 from typing import List, Dict, Any, Optional
+from enum import Enum
 from pydantic import BaseModel, Field, ConfigDict
 
 class ComputeConfig(BaseModel):
@@ -55,27 +56,38 @@ class AppConfig(BaseModel):
     paths: PathsConfig
     models: ModelsConfig
 
+class SourceType(str, Enum):
+    CLONE = "clone"
+    DESIGN = "design"
+    BLEND = "blend"
+
+class TrackType(str, Enum):
+    CLONE = "clone"
+    DESIGN = "design"
+    PREEXISTING = "preexisting"
+
 class VoiceProfile(BaseModel):
-    """
-    Represents a synthetic voice identity in the CAD system.
-    
-    This model serves as the single source of truth for a voice design.
-    The identity is primarily defined by the `identity_embedding` vector.
-    """
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="ignore", use_enum_values=True)
 
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     name: str
     created_at: float = Field(default_factory=time.time)
     
     identity_embedding: List[float]
+    seed: int
+    language: str
+
+    source_type: SourceType
+    track_a_type: Optional[TrackType] = None
+    track_b_type: Optional[TrackType] = None
     
+    is_refined: bool = False
+    refinement_prompt: Optional[str] = None
+
+    description: Optional[str] = None
     semantic_embedding: Optional[List[float]] = None
-    
-    base_language: str = "en"
-    
+    tags: List[str] = Field(default_factory=list)
+
     anchor_audio_path: Optional[str] = None
     
     parameters: Dict[str, Any] = Field(default_factory=dict)
-    tags: List[str] = Field(default_factory=list)
-    description: Optional[str] = None

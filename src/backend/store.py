@@ -1,13 +1,18 @@
 import os
+import shutil
+import time
 from typing import List, Optional
 from beaver import BeaverDB, Document
 from src.models import VoiceProfile, AppConfig
 
 class VoiceStore:
     """
-    Unified persistence layer using BeaverDB with native Vector Support.
+    Unified persistence layer using BeaverDB with native Vector Support and physical asset management.
     """
     def __init__(self, config: AppConfig):
+        """
+        Initializes the store and ensures all required directories exist.
+        """
         self.config = config
         
         db_dir = os.path.dirname(config.paths.db_file)
@@ -18,16 +23,24 @@ class VoiceStore:
         os.makedirs(config.paths.temp_dir, exist_ok=True)
 
         self.db = BeaverDB(config.paths.db_file)
-        
         self.master_data = self.db.dict("voices_data")
-        
         self.identity_index = self.db.collection("idx_identity")
         self.semantic_index = self.db.collection("idx_semantic")
 
-    def save(self, profile: VoiceProfile) -> str:
+    def add_profile(self, profile: VoiceProfile, anchor_source_path: Optional[str] = None) -> str:
         """
-        Saves the profile metadata and updates vector indices.
+        Persists the voice profile and copies the physical anchor audio to the assets directory.
         """
+        if anchor_source_path and os.path.exists(anchor_source_path):
+            safe_name = profile.name.replace(' ', '_').lower()
+            timestamp = int(time.time())
+            filename = f"{safe_name}_{timestamp}_anchor.wav"
+            
+            destination = os.path.join(self.config.paths.assets_dir, filename)
+            shutil.copy2(anchor_source_path, destination)
+            
+            profile.anchor_audio_path = filename
+
         self.master_data[profile.id] = profile.model_dump()
         
         doc_identity = Document(
@@ -51,7 +64,7 @@ class VoiceStore:
 
     def get(self, voice_id: str) -> Optional[VoiceProfile]:
         """
-        Retrieves a voice profile by its ID.
+        Retrieves a voice profile by its ID and instantiates the Pydantic model.
         """
         try:
             data = self.master_data.get(voice_id)
@@ -61,51 +74,8 @@ class VoiceStore:
         except KeyError:
             return None
 
-    def search_identity(self, query_vector: List[float], limit: int = 5) -> List[VoiceProfile]:
-        """
-        Performs vector search on the identity index.
-        """
-        results = self.identity_index.search(query_vector, k=limit)
-        
-        profiles = []
-        for match in results:
-            profile = self.get(match.item.id)
-            if profile:
-                profiles.append(profile)
-        return profiles
-
-    def search_semantic(self, query_vector: List[float], limit: int = 5) -> List[VoiceProfile]:
-        """
-        Performs vector search on the semantic index.
-        """
-        results = self.semantic_index.search(query_vector, k=limit)
-        
-        profiles = []
-        for match in results:
-            profile = self.get(match.item.id)
-            if profile:
-                profiles.append(profile)
-        return profiles
-
     def get_all(self) -> List[VoiceProfile]:
         """
-        Retrieves all stored voice profiles.
+        Retrieves all stored voice profiles from the master data dictionary.
         """
         return [VoiceProfile(**data) for data in self.master_data.values()]
-
-    def delete(self, voice_id: str) -> bool:
-        """
-        Deletes a profile from storage.
-        """
-        try:
-            if voice_id in self.master_data:
-                del self.master_data[voice_id]
-            return True
-        except Exception:
-            return False
-
-    def count(self) -> int:
-        """
-        Returns the total number of profiles.
-        """
-        return len(self.master_data)

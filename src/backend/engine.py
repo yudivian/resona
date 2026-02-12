@@ -3,96 +3,76 @@ import logging
 import soundfile as sf
 import numpy as np
 import torch
+import os
 from typing import Optional, Union, List, Any
 from src.models import AppConfig
 from qwen_tts import Qwen3TTSModel
 from qwen_tts.inference.qwen3_tts_model import VoiceClonePromptItem
 
-# Configure module-level logger
 logger = logging.getLogger(__name__)
 
-# Phonetically rich calibration texts (12-15s) to ensure stable Anchor Audios.
 CALIBRATION_TEXTS = {
-    # English: "The Rainbow Passage" - A standard text used in speech pathology 
-    # to capture the full range of English phonemes.
+    # English: "The Rainbow Passage"
     "en": (
         "When the sunlight strikes raindrops in the air, they act like a prism and form a rainbow. "
         "The rainbow is a division of white light into many beautiful colors. "
         "These take the shape of a long round arch, with its path high above, "
         "and its two ends apparently beyond the horizon."
     ),
-    
-    # Spanish: "The North Wind and the Sun" (Aesop's Fable). 
-    # The standard text used by the IPA for Spanish phonetic transcription.
+    # Spanish: "The North Wind and the Sun" (Aesop's Fable)
     "es": (
         "El viento norte y el sol discutían sobre cuál de ellos era el más fuerte, "
         "cuando pasó un viajero envuelto en una capa pesada. "
         "Se pusieron de acuerdo en que el primero que lograra que el viajero "
         "se quitara la capa sería considerado más fuerte que el otro."
     ),
-    
-    # French: "La Bise et le Soleil" (Aesop's Fable).
-    # Standard phonetic text, crucial for capturing French 'liaison' and nasal vowels.
+    # French: "La Bise et le Soleil" (Aesop's Fable)
     "fr": (
         "La bise et le soleil se disputaient, chacun assurant qu'il était le plus fort, "
         "quand ils ont vu un voyageur qui s'avançait, enveloppé dans son manteau. "
         "Ils sont tombés d'accord que celui qui arriverait le premier "
         "à faire ôter son manteau au voyageur serait regardé comme le plus fort."
     ),
-    
-    # German: "Der Nordwind und die Sonne" (Aesop's Fable).
-    # Captures German consonant clusters and sentence structure.
+    # German: "Der Nordwind und die Sonne" (Aesop's Fable)
     "de": (
         "Einst stritten sich Nordwind und Sonne, wer von ihnen beiden wohl der Stärkere wäre, "
         "als ein Wanderer, der in einen warmen Mantel gehüllt war, des Weges daherkam. "
         "Sie wurden einig, dass derjenige für den Stärkeren gelten sollte, "
         "der den Wanderer zwingen würde, seinen Mantel abzulegen."
     ),
-    
-    # Italian: "La Tramontana e il Sole" (Aesop's Fable).
-    # Rich in open/closed vowels and double consonants (gemination).
+    # Italian: "La Tramontana e il Sole" (Aesop's Fable)
     "it": (
         "Si disputavano la tramontana e il sole, chi di loro due fosse il più forte, "
         "quando passò un viaggiatore avvolto in un pesante mantello. "
         "Convennero che si sarebbe creduto più forte quello che "
         "fosse riuscito a far togliere il mantello al viaggiatore."
     ),
-    
-    # Portuguese: "O Vento Norte e o Sol" (Aesop's Fable).
-    # Covers nasal vowels (ão, õe) and stress patterns.
+    # Portuguese: "O Vento Norte e o Sol" (Aesop's Fable)
     "pt": (
         "O vento norte e o sol discutiam qual deles era o mais forte, "
         "quando passou um viajante envolto numa capa pesada. "
         "Concordaram que o que primeiro conseguisse obrigar o viajante "
-        "a tirar a capa seria considerado o mais forte."
+        "a tirar a capa seria considerado o más forte."
     ),
-    
-    # Chinese (Mandarin): "Spring Breeze". 
-    # A standard descriptive passage covering various tones and sibilants.
+    # Chinese (Mandarin): "Spring Breeze"
     "zh": (
         "春风仿佛一位灵巧的画家，把大自然描绘得五彩斑斓。柳树抽出了嫩绿的枝条，"
         "小草从泥土里探出头来，好奇地张望着这个世界。燕子从南方飞回来，"
         "叽叽喳喳地唱着春天的赞歌。"
     ),
-    
-    # Japanese: Opening of "I Am a Cat" (Wagahai wa Neko de Aru) by Natsume Soseki.
-    # The gold standard for testing natural intonation in Japanese TTS.
+    # Japanese: Opening of "I Am a Cat" (Wagahai wa Neko de Aru)
     "ja": (
         "吾輩は猫である。名前はまだ無い。どこで生れたかとんと見当がつかぬ。"
         "何でも薄暗いじめじめした所でニャーニャー泣いていた事だけは記憶している。"
         "吾輩はここで始めて人間というものを見た。"
     ),
-    
-    # Korean: A standard nature description passage.
-    # Balanced for basic consonants and vowel harmony.
+    # Korean: Standard nature description passage
     "ko": (
         "바람이 불면 나뭇잎이 흔들리고, 강물은 쉴 새 없이 흐릅니다. "
         "계절이 바뀌면서 세상은 다양한 색으로 물들고, "
         "우리는 그 속에서 자연의 위대함을 배웁니다."
     ),
-    
-    # Russian: "The North Wind and the Sun" (Aesop's Fable).
-    # Captures hard and soft palatalization typical of Russian.
+    # Russian: "The North Wind and the Sun" (Aesop's Fable)
     "ru": (
         "Северный ветер и солнце спорили, кто из них сильнее, "
         "когда увидели путешественника, закутанного в плотный плащ. "
@@ -108,11 +88,23 @@ class TTSModelProvider:
     _model = None
 
     def __init__(self, config: AppConfig):
+        """
+        Initialize the provider with application configuration.
+
+        Args:
+            config (AppConfig): Global application configuration.
+        """
         self.config = config
         self.device = config.system.compute.tts_device
         self.precision = torch.bfloat16 if config.system.compute.precision == "bf16" else torch.float16
 
     def get_model(self) -> Qwen3TTSModel:
+        """
+        Retrieves or initializes the Qwen3-TTS model instance.
+
+        Returns:
+            Qwen3TTSModel: The loaded model wrapper.
+        """
         if TTSModelProvider._model is None:
             use_flash_attn = (
                 "cuda" in self.device and 
@@ -130,10 +122,17 @@ class TTSModelProvider:
 
 class InferenceEngine:
     """
-    Stateful execution engine for a single voice design track.
-    Manages the lifecycle of a voice identity: from Text/Audio -> Anchor -> Tensor.
+    Stateful execution engine for voice identity lifecycle management.
     """
     def __init__(self, config: AppConfig, tts_provider: TTSModelProvider, lang: str = "en"):
+        """
+        Initialize the engine for a specific language context.
+
+        Args:
+            config (AppConfig): App configuration.
+            tts_provider (TTSModelProvider): Shared model provider.
+            lang (str): ISO language code.
+        """
         self.config = config
         self.tts_provider = tts_provider
         self.lang = lang
@@ -143,13 +142,18 @@ class InferenceEngine:
         self._seed = 42
 
     def _load_model(self):
+        """
+        Ensures the model is loaded before any operation.
+        """
         if self.model is None:
             self.model = self.tts_provider.get_model()
 
     def design_identity(self, prompt: str):
         """
-        [Text Design Flow]
         Generates a synthetic voice identity from a text description.
+
+        Args:
+            prompt (str): Natural language description of the voice.
         """
         self._load_model()
         calibration_text = CALIBRATION_TEXTS.get(self.lang, CALIBRATION_TEXTS["en"])
@@ -164,7 +168,10 @@ class InferenceEngine:
             audio_data = design_outputs[0]
 
             timestamp = int(time.time() * 1000)
-            self.last_anchor_path = f"{self.config.paths.temp_dir}/design_anchor_{timestamp}.wav"
+            self.last_anchor_path = os.path.join(
+                self.config.system.paths.temp, 
+                f"design_anchor_{timestamp}.wav"
+            )
             sf.write(self.last_anchor_path, audio_data, 24000)
 
             self.active_identity = self.model.create_voice_clone_prompt(
@@ -178,8 +185,11 @@ class InferenceEngine:
 
     def extract_identity(self, audio_path: str, transcript: Optional[str] = None):
         """
-        [Cloning Flow]
         Extracts a voice identity from an existing audio file.
+
+        Args:
+            audio_path (str): Path to the source audio file.
+            transcript (Optional[str]): Text spoken in the audio for ICL mode.
         """
         self._load_model()
         self.last_anchor_path = audio_path
@@ -188,7 +198,7 @@ class InferenceEngine:
         
         use_x_vector = False
         if not transcript:
-            logger.warning("No transcript provided. Using X-Vector mode (reduced quality).")
+            logger.warning("No transcript provided. Using X-Vector mode.")
             use_x_vector = True
             transcript = ""
 
@@ -205,10 +215,13 @@ class InferenceEngine:
 
     def load_identity_from_vector(self, vector: List[float]):
         """
-        Reconstructs an identity purely from a stored vector (embedding).
+        Reconstructs an identity from a stored embedding vector.
+
+        Args:
+            vector (List[float]): Identity embedding vector.
         """
         self._load_model()
-        logger.info("Loading identity from raw vector...")
+        logger.info("Loading identity from raw vector.")
         
         try:
             device = self.model.device
@@ -227,13 +240,23 @@ class InferenceEngine:
             raise
 
     def set_identity(self, identity_item: VoiceClonePromptItem, seed: int = 42):
+        """
+        Sets the identity object directly.
+
+        Args:
+            identity_item (VoiceClonePromptItem): The identity object.
+            seed (int): Reproducibility seed.
+        """
         self.active_identity = identity_item
         self._seed = seed
-        logger.debug("Identity set directly from external source.")
+        logger.debug("Identity set directly.")
 
     def get_identity_vector(self) -> List[float]:
         """
-        Returns the raw speaker embedding vector for storage.
+        Retrieves the raw speaker embedding vector.
+
+        Returns:
+            List[float]: The speaker embedding.
         """
         if self.active_identity is None:
             raise ValueError("No active identity.")
@@ -243,33 +266,54 @@ class InferenceEngine:
 
     def generate_preview(self, text: str, refinement: Optional[str] = None) -> str:
         """
-        Generates a temporary audio preview using the currently active identity.
+        Generates a temporary audio preview.
+
+        Args:
+            text (str): Content to synthesize.
+            refinement (Optional[str]): Style instruction.
+
+        Returns:
+            str: Path to the preview file.
         """
         if self.active_identity is None:
-            logger.error("Attempted preview generation without active identity.")
-            raise ValueError("Identity state is empty. Create or load an identity first.")
+            raise ValueError("Identity state is empty.")
         
         return self._render(text, refinement=refinement)
 
     def render_anchor(self, asset_name: str, refinement: Optional[str] = None) -> str:
         """
-        [Solidification Flow]
-        Materializes the current identity state into a permanent Anchor Audio.
+        Solidifies current identity into a permanent anchor audio.
+
+        Args:
+            asset_name (str): Base name for the asset.
+            refinement (Optional[str]): Style prompt to bake in.
+
+        Returns:
+            str: Path to the permanent anchor audio.
         """
         self._load_model()
         calibration_script = CALIBRATION_TEXTS.get(self.lang, CALIBRATION_TEXTS["en"])
         
-        path = f"{self.config.paths.assets_dir}/{asset_name}_anchor.wav"
+        path = os.path.join(
+            self.config.system.paths.assets, 
+            f"{asset_name}_anchor.wav"
+        )
         
         logger.info(f"Solidifying identity anchor to {path}")
         return self._render(calibration_script, output_path=path, refinement=refinement)
 
     def _render(self, text: str, output_path: Optional[str] = None, refinement: Optional[str] = None) -> str:
+        """
+        Internal synthesis helper.
+        """
         self._load_model()
         
         if output_path is None:
             timestamp = int(time.time() * 1000)
-            output_path = f"{self.config.paths.temp_dir}/preview_{timestamp}.wav"
+            output_path = os.path.join(
+                self.config.system.paths.temp, 
+                f"render_{timestamp}.wav"
+            )
 
         try:
             wavs = self.model.generate_voice_clone(
@@ -287,26 +331,26 @@ class InferenceEngine:
 
 class VoiceBlender:
     """
-    Mathematical utility for interpolating between two identities.
+    Utility for blending voice identities.
     """
     @staticmethod
     def blend(engine_a: InferenceEngine, engine_b: InferenceEngine, alpha: float) -> InferenceEngine:
         """
-        Creates a NEW InferenceEngine containing the blended identity of A and B.
-        
+        Creates a new InferenceEngine with a blended identity.
+
         Args:
-            engine_a: Source Track A
-            engine_b: Source Track B
-            alpha: Mixing factor (0.0 = A, 1.0 = B)
-            
+            engine_a (InferenceEngine): Primary track.
+            engine_b (InferenceEngine): Secondary track.
+            alpha (float): Blending ratio.
+
         Returns:
-            InferenceEngine: A new engine instance ready to generate/render the mixed voice.
+            InferenceEngine: Engine with the mixed identity.
         """
         if engine_a.active_identity is None or engine_b.active_identity is None:
-            logger.error("Blending requested but one or both identities are missing.")
-            raise ValueError("Both engines must have active identities to blend.")
+            logger.error("Missing identities for blending.")
+            raise ValueError("Both engines must have active identities.")
             
-        logger.info(f"Blending engines A+B with alpha={alpha}")
+        logger.info(f"Blending engines with alpha={alpha}")
 
         emb_a = engine_a.active_identity.ref_spk_embedding
         emb_b = engine_b.active_identity.ref_spk_embedding
@@ -329,7 +373,7 @@ class VoiceBlender:
             tts_provider=engine_a.tts_provider,
             lang=engine_a.lang 
         )
-    
+        
         mixed_engine.set_identity(hybrid_identity)
         
         return mixed_engine

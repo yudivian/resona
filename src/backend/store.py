@@ -5,12 +5,7 @@ from src.models import VoiceProfile, AppConfig
 
 class VoiceStore:
     """
-    Unified persistence layer using a relational-style pattern with BeaverDB.
-    
-    Architecture:
-    - Master Store: 'voices_data' (Dict) - The source of truth for metadata.
-    - Identity Index: 'idx_identity' (Docs) - Vector index for voice DNA.
-    - Semantic Index: 'idx_semantic' (Docs) - Vector index for design concepts.
+    Unified persistence layer using BeaverDB with native Vector Support.
     """
     def __init__(self, config: AppConfig):
         self.config = config
@@ -24,86 +19,93 @@ class VoiceStore:
 
         self.db = BeaverDB(config.paths.db_file)
         
-        self.master_data = self.db.dict("voices_data", model=VoiceProfile)
-        self.identity_index = self.db.docs("idx_identity")
-        self.semantic_index = self.db.docs("idx_semantic")
+        self.master_data = self.db.dict("voices_data")
+        
+        self.identity_index = self.db.collection("idx_identity")
+        self.semantic_index = self.db.collection("idx_semantic")
 
     def save(self, profile: VoiceProfile) -> str:
         """
-        Saves the profile to the master dict and updates both vector indices.
+        Saves the profile metadata and updates vector indices.
         """
-        self.master_data.set(profile.id, profile)
+        self.master_data[profile.id] = profile.model_dump()
         
-        identity_doc = Document(
+        doc_identity = Document(
             id=profile.id,
-            embedding=profile.identity_embedding
+            embedding=profile.identity_embedding,
+            content=profile.name,
+            metadata={"type": "identity"}
         )
-        self.identity_index.index(identity_doc)
+        self.identity_index.add(doc_identity)
         
         if profile.semantic_embedding:
-            semantic_doc = Document(
+            doc_semantic = Document(
                 id=profile.id,
-                embedding=profile.semantic_embedding
+                embedding=profile.semantic_embedding,
+                content=profile.description or "",
+                metadata={"type": "semantic"}
             )
-            self.semantic_index.index(semantic_doc)
+            self.semantic_index.add(doc_semantic)
             
         return profile.id
 
     def get(self, voice_id: str) -> Optional[VoiceProfile]:
         """
-        Retrieves the profile from the master dictionary.
+        Retrieves a voice profile by its ID.
         """
         try:
-            return self.master_data.get(voice_id)
+            data = self.master_data.get(voice_id)
+            if data:
+                return VoiceProfile(**data)
+            return None
         except KeyError:
             return None
 
     def search_identity(self, query_vector: List[float], limit: int = 5) -> List[VoiceProfile]:
         """
-        Performs vector search on the identity index and hydrates results from master.
+        Performs vector search on the identity index.
         """
-        results = self.identity_index.search(vector=query_vector, top_k=limit)
+        results = self.identity_index.search(query_vector, k=limit)
         
         profiles = []
-        for doc, _ in results:
-            profile = self.get(doc.id)
+        for match in results:
+            profile = self.get(match.item.id)
             if profile:
                 profiles.append(profile)
         return profiles
 
     def search_semantic(self, query_vector: List[float], limit: int = 5) -> List[VoiceProfile]:
         """
-        Performs vector search on the semantic index and hydrates results from master.
+        Performs vector search on the semantic index.
         """
-        results = self.semantic_index.search(vector=query_vector, top_k=limit)
+        results = self.semantic_index.search(query_vector, k=limit)
         
         profiles = []
-        for doc, _ in results:
-            profile = self.get(doc.id)
+        for match in results:
+            profile = self.get(match.item.id)
             if profile:
                 profiles.append(profile)
         return profiles
 
     def get_all(self) -> List[VoiceProfile]:
         """
-        Returns all profiles from the master dictionary.
+        Retrieves all stored voice profiles.
         """
-        return list(self.master_data.values())
+        return [VoiceProfile(**data) for data in self.master_data.values()]
 
     def delete(self, voice_id: str) -> bool:
         """
-        Removes the profile from the master store and all associated indices.
+        Deletes a profile from storage.
         """
         try:
-            self.master_data.delete(voice_id)
-            self.identity_index.drop(voice_id)
-            self.semantic_index.drop(voice_id)
+            if voice_id in self.master_data:
+                del self.master_data[voice_id]
             return True
-        except (KeyError, Exception):
+        except Exception:
             return False
 
     def count(self) -> int:
         """
-        Returns the count from the master store.
+        Returns the total number of profiles.
         """
-        return self.master_data.count()
+        return len(self.master_data)

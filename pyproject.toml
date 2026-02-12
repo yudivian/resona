@@ -6,14 +6,14 @@ readme = "README.md"
 requires-python = ">=3.12, <3.13"
 dependencies = [
     "streamlit>=1.38.0",
-    "torch>=2.4.0",
-    "torchaudio>=2.4.0",
+    "torch==2.5.1",
+    "torchaudio==2.5.1",
     "transformers>=4.44.0",
     "accelerate>=0.33.0",
     "numpy>=1.26.0",
     "flash-attn>=2.6.3", 
     "qwen-tts",
-    "fastembed>=0.3.0",
+    "fastembed==0.7.4",
     "beaver-db[full]>=1.3.0",
     "soundfile>=0.12.0",
     "pydantic>=2.8.0",

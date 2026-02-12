@@ -6,7 +6,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from src.config import settings
 from src.ui.session import SessionManager
-from src.ui.components import init_page, render_debug_panel
+from src.ui.components import init_page, render_debug_panel, render_studio
 
 init_page()
 
@@ -29,9 +29,8 @@ render_debug_panel(session)
 
 tab_studio, tab_library, tab_search = st.tabs(["🎙️ Studio", "📚 Library", "🔍 Search"])
 
-with tab_studio:
-    st.header("Design Studio")
-    st.info("🚧 Studio components coming in Phase 2...")
+with tab_studio: 
+    render_studio(session)
 
 with tab_library:
     st.header("Voice Library")

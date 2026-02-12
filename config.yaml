@@ -18,4 +18,4 @@ models:
     sample_rate: 24000
   
   semantic:
-    repo_id: "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+    repo_id: "intfloat/multilingual-e5-large"

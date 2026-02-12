@@ -1,4 +1,5 @@
 from typing import List
+import numpy as np
 from fastembed import TextEmbedding
 from src.models import AppConfig
 
@@ -13,22 +14,16 @@ class EmbeddingModelProvider:
 
     def get_model(self) -> TextEmbedding:
         """
-        Initializes the TextEmbedding model using configuration-driven parameters.
-        Uses dynamic model registration to silence pooling warnings without hardcoding.
+        Initializes the TextEmbedding model using configuration parameters.
+        No custom registration is used to avoid signature conflicts with official models.
         """
         if EmbeddingModelProvider._model is None:
+            # Extraemos el repo_id de config.yaml (ej: "sentence-transformers/...")
             model_id = self.config.models.semantic.repo_id
+            # Determinamos si usar CUDA basado en tu configuración de sistema
             use_cuda = "cuda" in self.config.system.compute.embed_device
             
-            # Obtenemos los metadatos que la librería ya conoce para este repo_id
-            supported_models = TextEmbedding.list_supported_models()
-            model_info = next((m for m in supported_models if m["model"] == model_id), None)
-            
-            # Si el modelo es reconocido, lo registramos formalmente para evitar el warning de pooling.
-            # No se añade ningún parámetro que no provenga de la propia definición de la librería.
-            if model_info:
-                TextEmbedding.add_custom_model(**model_info)
-
+            # Instanciación estándar para modelos existentes
             EmbeddingModelProvider._model = TextEmbedding(
                 model_name=model_id,
                 cuda=use_cuda
@@ -41,16 +36,20 @@ class EmbeddingEngine:
     """
     def __init__(self, config: AppConfig, provider: EmbeddingModelProvider):
         self.config = config
-        self.model = provider.get_model()
+        self.provider = provider
 
     def generate_embedding(self, text: str) -> List[float]:
         """
-        Converts a text description into a dense vector using the loaded model.
+        Converts text into a dense vector using the loaded model.
         """
         if not text:
             raise ValueError("Input text cannot be empty")
         
-        generator = self.model.embed([text])
-        vector = list(generator)[0]
+        model = self.provider.get_model()
         
+        # embed() devuelve un iterador de numpy arrays
+        generator = model.embed([text])
+        vector = next(generator)
+        
+        # Convertimos a lista para compatibilidad con el resto del backend
         return vector.tolist()

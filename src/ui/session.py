@@ -83,6 +83,10 @@ class SessionManager:
             asset_name=safe_name
         )
         
+        if metadata.get("source_type") == SourceType.BLEND:
+            if not metadata.get("track_a_type") or not metadata.get("track_b_type"):
+                print("Warning: Saving a BLEND voice without track parent types.")
+        
         profile = VoiceProfile(
             name=name,
             identity_embedding=self.active_mix,

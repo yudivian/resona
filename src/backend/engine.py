@@ -1,3 +1,4 @@
+import time
 import torch
 import numpy as np
 import soundfile as sf
@@ -130,7 +131,8 @@ class InferenceEngine:
 
     def generate_preview(self, text: str, refinement: Optional[str] = None) -> str:
         """Renders temporary audio for the current workspace state."""
-        path = f"{self.config.paths.temp_dir}/preview_{hash(text + str(self._seed)) % 1000}.wav"
+        timestamp = int(time.time() * 1000)
+        path = f"{self.config.paths.temp_dir}/preview_{timestamp}_{self._seed}.wav"
         return self._render(text, path, refinement)
 
     def render_anchor(self, calibration_script: str, asset_name: str) -> str:

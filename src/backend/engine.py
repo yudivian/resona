@@ -45,12 +45,12 @@ CALIBRATION_TEXTS = {
     "it": (
         "Si disputavano la tramontana e il sole, chi di loro due fosse il più forte, "
         "quando passò un viaggiatore avvolto in un pesante mantello. "
-        "Convennero che si sarebbe creduto più forte quello che "
+        "Convennero que si sarebbe creduto più forte quello que "
         "fosse riuscito a far togliere il mantello al viaggiatore."
     ),
     # Portuguese: "O vento norte e o sol". Captures nasal vowels.
     "pt": (
-        "O vento norte e o sol discutiam qual deles era o mais forte, "
+        "O vento norte e o sol discutiam qual deles era o mais fuerte, "
         "quando passou um viajante envolto numa capa pesada. "
         "Concordaram que o que primeiro conseguisse obrigar o viajante "
         "a tirar a capa seria considerado o mais forte."
@@ -96,6 +96,7 @@ def set_global_seed(seed: int):
     Args:
         seed (int): The integer seed value to apply.
     """
+    logger.debug(f"Setting global seed to: {seed}")
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -138,8 +139,12 @@ class TTSModelProvider:
         if TTSModelProvider._creator_model is None:
             self._prepare_vram()
             repo = self.config.models.tts.design_repo_id
+            logger.info(f"Loading Creator Model (1.7B) from {repo}...")
             TTSModelProvider._creator_model = Qwen3TTSModel.from_pretrained(
-                repo, device_map=self.device, dtype=self.precision, attn_implementation="flash_attention_2"
+                repo, 
+                device_map=self.device, 
+                torch_dtype=self.precision,
+                attn_implementation="flash_attention_2"
             )
         return TTSModelProvider._creator_model
 
@@ -153,8 +158,12 @@ class TTSModelProvider:
         if TTSModelProvider._synthesis_model is None:
             self._prepare_vram()
             repo = self.config.models.tts.base_repo_id
+            logger.info(f"Loading Synthesis Model (0.6B) from {repo}...")
             TTSModelProvider._synthesis_model = Qwen3TTSModel.from_pretrained(
-                repo, device_map=self.device, dtype=self.precision, attn_implementation="flash_attention_2"
+                repo, 
+                device_map=self.device, 
+                torch_dtype=self.precision,
+                attn_implementation="flash_attention_2"
             )
         return TTSModelProvider._synthesis_model
 
@@ -179,6 +188,7 @@ class InferenceEngine:
         self.active_identity: Optional[VoiceClonePromptItem] = None
         self.active_seed: Optional[int] = None
         self.last_anchor_path: Optional[str] = None
+        logger.info(f"InferenceEngine initialized. Language: {lang}")
 
     def _extract_vectors(self, audio_path: str, text: str):
         """
@@ -189,13 +199,17 @@ class InferenceEngine:
             text (str): Transcript or calibration text matching the audio.
         """
         model = self.tts_provider.get_synthesis_model()
+        logger.info(f"Extracting vectors from anchor: {audio_path}")
         prompts = model.create_voice_clone_prompt(ref_audio=audio_path, ref_text=text)
         self.active_identity = prompts[0]
         self.active_identity.ref_spk_embedding = self.active_identity.ref_spk_embedding.clone().detach()
+        logger.debug(f"Vector extracted successfully. Shape: {self.active_identity.ref_spk_embedding.shape}")
 
     def design_identity(self, prompt: str, seed: Optional[int] = None):
         """
-        Creates a new voice identity from a text description.
+        Action: DESIGN. 
+        Generates the physical Anchor Audio using the Creator model and calibration text.
+        Then extracts the identity vector from the generated Anchor.
 
         Args:
             prompt (str): The natural language description of the voice.
@@ -210,44 +224,50 @@ class InferenceEngine:
         cal_text = CALIBRATION_TEXTS.get(self.lang, CALIBRATION_TEXTS["en"])
         full_lang = LANGUAGE_MAP.get(self.lang, "English")
         
+        logger.info(f"Designing Anchor Audio (Seed: {seed}) with calibration text.")
         wavs, fs = creator.generate_voice_design(
             text=cal_text,
             language=full_lang,
             instruct=prompt
         )
         
-        temp_path = os.path.join(self.config.paths.temp_dir, f"anchor_design_{seed}.wav")
-        sf.write(temp_path, wavs[0], fs)
-        
-        self.last_anchor_path = temp_path
-        self._extract_vectors(temp_path, cal_text)
+        anchor_path = os.path.join(self.config.paths.temp_dir, f"anchor_design_{seed}.wav")
+        sf.write(anchor_path, wavs[0], fs)
+        self.last_anchor_path = anchor_path
+        logger.info(f"Anchor persisted at {anchor_path}")
+
+        self._extract_vectors(anchor_path, cal_text)
 
     def extract_identity(self, audio_path: str, transcript: Optional[str] = None):
         """
-        Creates a voice identity from an existing audio file (Cloning).
+        Action: CLONE.
+        Clones an identity from an existing Anchor Audio file provided by the user.
 
         Args:
             audio_path (str): Path to the source audio file.
-            transcript (Optional[str]): The exact text spoken in the audio.
+            transcript (Optional[str]): The exact text content of the audio for alignment.
         """
         self.active_seed = 42
         set_global_seed(self.active_seed)
         
         if not os.path.exists(audio_path):
+            logger.error(f"Failed to find audio file: {audio_path}")
             raise FileNotFoundError(f"Audio file not found: {audio_path}")
 
         self.last_anchor_path = audio_path
+        logger.info(f"Extracting identity from source: {audio_path}")
         self._extract_vectors(audio_path, transcript if transcript else "")
 
     def load_identity_from_state(self, vector: List[float], seed: int, anchor_path: Optional[str] = None):
         """
-        Restores identity from Database state.
+        Restores a voice identity from its persisted state components (Vector and Seed).
 
         Args:
-            vector (List[float]): Speaker embedding.
-            seed (int): Generator seed.
-            anchor_path (Optional[str]): Path to the original anchor file.
+            vector (List[float]): Speaker embedding list.
+            seed (int): Original generation seed.
+            anchor_path (Optional[str]): Path to the original reference audio.
         """
+        logger.info(f"Loading identity from state. Seed: {seed}")
         device = self.tts_provider.device
         dtype = self.tts_provider.precision
         emb = torch.tensor(vector, device=device, dtype=dtype).unsqueeze(0).clone().detach()
@@ -260,56 +280,70 @@ class InferenceEngine:
 
     def render(self, text: str, output_path: Optional[str] = None) -> str:
         """
-        Generates final audio using the Base Model, Active Vector, and Active Seed.
+        Action: PREVIEW/RENDER.
+        Synthesizes audio using the consolidated identity vector and the target text.
 
         Args:
-            text (str): Text to synthesize.
-            output_path (Optional[str]): Target file path.
+            text (str): The text string to synthesize.
+            output_path (Optional[str]): Specific path to save the generated audio.
 
         Returns:
-            str: Path to generated audio file.
+            str: Path to the generated audio file.
         """
         if not self.active_identity or self.active_seed is None:
+            logger.error("Synthesis failed: Identity is not consolidated.")
             raise ValueError("Identity incomplete (Vector or Seed missing).")
 
         set_global_seed(self.active_seed)
-        
         model = self.tts_provider.get_synthesis_model()
         full_lang = LANGUAGE_MAP.get(self.lang, "English")
         
         if not output_path:
             output_path = os.path.join(self.config.paths.temp_dir, f"render_{int(time.time()*1000)}.wav")
 
+        logger.info(f"Rendering synthesis to {output_path}...")
         if torch.cuda.is_available(): torch.cuda.synchronize()
-
+        
         wavs, fs = model.generate_voice_clone(
             text=text,
             language=full_lang,
             voice_clone_prompt=[self.active_identity]
         )
-
+        
         if torch.cuda.is_available(): torch.cuda.synchronize()
-
         sf.write(output_path, wavs[0], fs)
         return output_path
 
+    def get_identity_vector(self) -> List[float]:
+        """
+        Extracts the active speaker embedding as a list of floats for persistence.
+
+        Returns:
+            List[float]: The speaker embedding vector.
+        """
+        if not self.active_identity:
+            logger.error("Requested vector from empty identity.")
+            raise ValueError("No active identity vector.")
+        return self.active_identity.ref_spk_embedding.squeeze().cpu().tolist()
+
 class VoiceBlender:
     """
-    Handles interpolation between two InferenceEngines.
+    Handles interpolation and blending between two InferenceEngines.
     """
     @staticmethod
     def blend(engine_a: InferenceEngine, engine_b: InferenceEngine, alpha: float) -> InferenceEngine:
         """
-        Creates a new InferenceEngine by mathematically blending the vectors.
+        Blends two voice identities and generates a consolidated Universal Anchor for the mix.
 
         Args:
-            engine_a (InferenceEngine): Source A.
-            engine_b (InferenceEngine): Source B.
-            alpha (float): Mixing factor (0.0 to 1.0).
+            engine_a (InferenceEngine): Primary engine track (Alpha 0.0).
+            engine_b (InferenceEngine): Secondary engine track (Alpha 1.0).
+            alpha (float): Mixing factor between 0.0 and 1.0.
 
         Returns:
-            InferenceEngine: A new engine with the blended identity.
+            InferenceEngine: A new engine instance with the blended identity and its own Anchor.
         """
+        logger.info(f"Blending engines A and B with alpha={alpha}")
         if engine_a.active_identity is None or engine_b.active_identity is None:
             raise ValueError("Missing identities for blending.")
 
@@ -327,6 +361,7 @@ class VoiceBlender:
         mixed_seed = random.randint(0, 999999)
         set_global_seed(mixed_seed)
         
+        logger.info(f"Generating Universal Anchor for blend (Seed: {mixed_seed})")
         temp_engine = InferenceEngine(engine_a.config, engine_a.tts_provider, engine_a.lang)
         temp_engine.active_identity = temp_identity
         temp_engine.active_seed = mixed_seed

@@ -5,7 +5,7 @@ system:
   compute:
     tts_device: "cuda"
     embed_device: "cpu"
-    precision: "float16"
+    precision: "bf16"
 
 paths:
   db_file: "data/resona.db"

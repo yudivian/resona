@@ -14,7 +14,8 @@ paths:
 
 models:
   tts:
-    repo_id: "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign"
+    design_repo_id: "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign"
+    base_repo_id: "Qwen/Qwen3-TTS-12Hz-0.6B-Base"
     sample_rate: 24000
   
   semantic:

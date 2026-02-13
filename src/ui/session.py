@@ -1,108 +1,211 @@
+import os
 import uuid
 import time
-import os
+import logging
+import shutil
 from typing import Optional, List, Dict, Any
 from src.models import AppConfig, VoiceProfile, SourceType, TrackType
 from src.backend.engine import TTSModelProvider, InferenceEngine, VoiceBlender
-from src.backend.embedding import EmbeddingModelProvider, EmbeddingEngine
-from src.backend.store import VoiceStore
+
+logger = logging.getLogger(__name__)
 
 class SessionManager:
     """
-    Orchestrates the design session state by synchronizing inference engines, 
-    embedding generation, and the persistence layer.
+    Main controller linking UI interactions to Backend Logic.
     """
+
     def __init__(self, config: AppConfig):
         """
-        Initializes the session with required providers and engines.
+        Initializes the session, provider, and engine tracks.
 
         Args:
-            config (AppConfig): Global application configuration.
+            config (AppConfig): Application configuration.
         """
         self.config = config
-        
         self.tts_provider = TTSModelProvider(config)
-        self.embed_provider = EmbeddingModelProvider(config)
-        
-        self.engine_a = InferenceEngine(config, self.tts_provider, lang="en")
-        self.engine_b = InferenceEngine(config, self.tts_provider, lang="en")
-        self.embed_engine = EmbeddingEngine(config, self.embed_provider)
-        
-        self.store = VoiceStore(config)
-        
-        self.active_mix: Optional[List[float]] = None
-        self.active_seed: int = 42
+        self.engine_a = InferenceEngine(config, self.tts_provider)
+        self.engine_b = InferenceEngine(config, self.tts_provider)
+        self._cached_blend_engine: Optional[InferenceEngine] = None
+        self._last_blend_alpha: float = -1.0
+        self.track_a_type: TrackType = TrackType.DESIGN
+        self.track_b_type: TrackType = TrackType.DESIGN
 
-    def load_voice_to_track(self, track_label: str, profile_id: str):
+    def set_language(self, lang_code: str):
         """
-        Loads a persisted profile from the store into the targeted track engine.
+        Updates language context for both engines.
 
         Args:
-            track_label (str): Identifier for the track ('A' or 'B').
-            profile_id (str): Unique identifier of the voice profile.
+            lang_code (str): The ISO 639-1 language code.
         """
-        profile = self.store.get(profile_id)
-        if not profile:
-            raise ValueError(f"Profile {profile_id} not found")
-        
-        target_engine = self.engine_a if track_label.upper() == "A" else self.engine_b
-        target_engine.lang = profile.language
-        
-        if profile.anchor_audio_path:
-            full_anchor_path = os.path.join(self.config.paths.assets_dir, profile.anchor_audio_path)
-            if os.path.exists(full_anchor_path):
-                target_engine.extract_identity(full_anchor_path)
-                return
+        if self.engine_a.lang != lang_code:
+            self.engine_a.lang = lang_code
+            self.engine_b.lang = lang_code
+            self._cached_blend_engine = None
 
-        target_engine.load_identity_from_vector(profile.identity_embedding)
+    def _get_target_engine(self, track_id: str) -> InferenceEngine:
+        if track_id == "A": return self.engine_a
+        elif track_id == "B": return self.engine_b
+        else: raise ValueError(f"Invalid track_id: {track_id}")
 
-    def blend_tracks(self, alpha: float):
+    def design_voice(self, track_id: str, prompt: str, seed: Optional[int] = None):
         """
-        Computes a blended identity vector between track A and track B.
+        Triggers Voice Design on the specific track.
 
         Args:
-            alpha (float): Interpolation ratio between 0.0 and 1.0.
+            track_id (str): 'A' or 'B'.
+            prompt (str): Design description.
+            seed (Optional[int]): Seed for reproducibility.
         """
-        blended_engine = VoiceBlender.blend(self.engine_a, self.engine_b, alpha)
-        self.active_mix = blended_engine.get_identity_vector()
-        self.active_seed = 42
+        engine = self._get_target_engine(track_id)
+        engine.design_identity(prompt, seed)
+        self._cached_blend_engine = None
+        if track_id == "A":
+            self.track_a_type = TrackType.DESIGN
+        else:
+            self.track_b_type = TrackType.DESIGN
+
+    def clone_voice(self, track_id: str, audio_path: str, transcript: str):
+        """
+        Triggers Voice Cloning on the specific track.
+
+        Args:
+            track_id (str): 'A' or 'B'.
+            audio_path (str): Path to source audio.
+            transcript (str): Reference text for alignment.
+        """
+        engine = self._get_target_engine(track_id)
+        engine.extract_identity(audio_path, transcript)
+        self._cached_blend_engine = None
+        if track_id == "A":
+            self.track_a_type = TrackType.CLONE
+        else:
+            self.track_b_type = TrackType.CLONE
+
+    def load_voice_from_library(self, track_id: str, voice_id: str):
+        """
+        Loads a voice profile from the database into the track.
+
+        Args:
+            track_id (str): 'A' or 'B'.
+            voice_id (str): Unique ID of the voice in DB.
+        """
+        target_engine = self._get_target_engine(track_id)
+        # Mocking DB load for now as per instructions
+        # Real implementation would fetch VoiceProfile and call:
+        # target_engine.load_identity_from_state(...)
+        if track_id == "A":
+            self.track_a_type = TrackType.PREEXISTING
+        else:
+            self.track_b_type = TrackType.PREEXISTING
+
+    def preview_voice(self, text: str, blend_alpha: Optional[float] = None) -> str:
+        """
+        Generates audio based on current state.
+
+        Args:
+            text (str): Text to synthesize.
+            blend_alpha (Optional[float]): Mixing factor.
+
+        Returns:
+            str: Path to the generated audio file.
+        """
+        target_engine = None
+
+        if blend_alpha is None or blend_alpha == 0.0:
+            target_engine = self.engine_a
+        elif blend_alpha == 1.0:
+            target_engine = self.engine_b
+        else:
+            if self._cached_blend_engine is None or self._last_blend_alpha != blend_alpha:
+                self._cached_blend_engine = VoiceBlender.blend(
+                    self.engine_a, self.engine_b, blend_alpha
+                )
+                self._last_blend_alpha = blend_alpha
+            target_engine = self._cached_blend_engine
+
+        if not target_engine.active_identity:
+            raise ValueError("Target track has no active identity.")
+
+        return target_engine.render(text)
+
+    def get_current_seed(self, blend_alpha: Optional[float] = None) -> int:
+        """
+        Retrieves the active seed for metadata storage.
+
+        Args:
+            blend_alpha (Optional[float]): Mixing factor.
+
+        Returns:
+            int: The active seed.
+        """
+        if blend_alpha is not None and 0.0 < blend_alpha < 1.0:
+             if self._cached_blend_engine:
+                 return self._cached_blend_engine.active_seed
+             return 0
+        
+        if blend_alpha == 1.0:
+            return self.engine_b.active_seed or 0
+        
+        return self.engine_a.active_seed or 0
+
+    def list_library_voices(self) -> Dict[str, str]:
+        """
+        Returns a dict of {id: name} for the UI dropdown.
+
+        Returns:
+            Dict[str, str]: Dictionary of voices.
+        """
+        return {"demo_01": "Demo Voice A", "demo_02": "Demo Voice B"}
 
     def save_session_voice(self, name: str, description: str, tags: List[str], metadata: Dict[str, Any]):
         """
-        Finalizes the current session by generating semantic embeddings, 
-        rendering the anchor audio, and persisting the profile.
+        Saves the current voice configuration to the library.
 
         Args:
-            name (str): Display name for the new voice.
-            description (str): Textual description for semantic search.
-            tags (List[str]): Classification tags.
-            metadata (Dict[str, Any]): Additional parameters and source info.
+            name (str): Name of the voice.
+            description (str): Description text.
+            tags (List[str]): List of tags.
+            metadata (Dict): Contains seed, blend settings, etc.
         """
-        if self.active_mix is None:
-            raise ValueError("No active identity mix to save")
+        alpha = metadata.get("blend")
+        engine = None
+        
+        if alpha is not None and 0.0 < float(alpha) < 1.0:
+            engine = self._cached_blend_engine
+        elif alpha is not None and float(alpha) == 1.0:
+            engine = self.engine_b
+        else:
+            engine = self.engine_a
 
-        semantic_vector = self.embed_engine.generate_embedding(description)
+        if not engine or not engine.active_identity:
+            raise ValueError("No active identity to save.")
+
+        if hasattr(engine, 'get_identity_vector'):
+            vector = engine.get_identity_vector()
+        else:
+            vector = engine.active_identity.ref_spk_embedding.squeeze().cpu().tolist()
         
-        safe_name = "".join([c for c in name if c.isalnum() or c in (' ', '-', '_')]).strip().replace(' ', '_')
-        
-        temp_anchor_path = self.engine_a.render_anchor(asset_name=safe_name)
-        
+        saved_anchor_filename = None
+        if engine.last_anchor_path and os.path.exists(engine.last_anchor_path):
+            unique_id = str(uuid.uuid4())
+            safe_name = "".join([c for c in name if c.isalnum() or c in (' ', '-', '_')]).strip().replace(' ', '_')
+            saved_anchor_filename = f"{safe_name}_{unique_id}.wav"
+            dest_path = os.path.join(self.config.paths.assets_dir, saved_anchor_filename)
+            os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+            shutil.copy(engine.last_anchor_path, dest_path)
+
         profile = VoiceProfile(
-            id=str(uuid.uuid4()),
             name=name,
-            identity_embedding=self.active_mix,
-            semantic_embedding=semantic_vector,
             description=description,
+            identity_embedding=vector,
+            seed=metadata.get("seed", 0),
+            language=metadata.get("language", "en"),
+            source_type=metadata.get("source_type", SourceType.DESIGN),
+            track_a_type=self.track_a_type,
+            track_b_type=self.track_b_type,
             tags=tags,
-            seed=self.active_seed,
-            language=self.engine_a.lang,
-            source_type=metadata.get("source_type", SourceType.BLEND),
-            track_a_type=metadata.get("track_a_type"),
-            track_b_type=metadata.get("track_b_type"),
-            is_refined=metadata.get("is_refined", False),
-            refinement_prompt=metadata.get("refinement_prompt"),
-            parameters=metadata.get("parameters", {}),
-            created_at=time.time()
+            anchor_audio_path=saved_anchor_filename
         )
         
-        self.store.add_profile(profile, anchor_source_path=temp_anchor_path)
+        # Real persistence would happen here calling self.store.save(profile)
+        logger.info(f"VoiceProfile created: {profile.name}")

@@ -32,7 +32,8 @@ class TTSModelConfig(BaseModel):
     """
     Settings for the Qwen-TTS model.
     """
-    repo_id: str
+    design_repo_id: str
+    base_repo_id: str
     sample_rate: int
 
 class SemanticModelConfig(BaseModel):

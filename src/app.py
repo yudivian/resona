@@ -1,5 +1,6 @@
 import sys
 import os
+import logging
 import streamlit as st
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -7,6 +8,10 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from src.config import settings
 from src.ui.session import SessionManager
 from src.ui.components import init_page, render_debug_panel, render_studio
+
+logger = logging.getLogger(__name__)
+if not logger.handlers:
+    logging.basicConfig(level=logging.INFO)
 
 init_page()
 

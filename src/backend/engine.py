@@ -43,15 +43,15 @@ CALIBRATION_TEXTS = {
     ),
     # Italian: "La Tramontana e il Sole". Captures gemination.
     "it": (
-        "Si disputavano la tramontana e il sole, chi di loro due fosse il più forte, "
+        "Si disputavano la tramontana e il sole, chi di loro due fosse il più fuerte, "
         "quando passò un viaggiatore avvolto in un pesante mantello. "
-        "Convennero que si sarebbe creduto più forte quello que "
+        "Convennero que si sarebbe creduto più fuerte quello que "
         "fosse riuscito a far togliere il mantello al viaggiatore."
     ),
     # Portuguese: "O vento norte e o sol". Captures nasal vowels.
     "pt": (
         "O vento norte e o sol discutiam qual deles era o mais fuerte, "
-        "quando passou um viajante envolto numa capa pesada. "
+        "quando pasó um viajante envolto numa capa pesada. "
         "Concordaram que o que primeiro conseguisse obrigar o viajante "
         "a tirar a capa seria considerado o mais forte."
     ),
@@ -199,7 +199,7 @@ class InferenceEngine:
             text (str): Transcript or calibration text matching the audio.
         """
         model = self.tts_provider.get_synthesis_model()
-        logger.info(f"Extracting vectors from anchor: {audio_path}")
+        logger.info(f"Extracting vectors from: {audio_path}")
         prompts = model.create_voice_clone_prompt(ref_audio=audio_path, ref_text=text)
         self.active_identity = prompts[0]
         self.active_identity.ref_spk_embedding = self.active_identity.ref_spk_embedding.clone().detach()
@@ -207,7 +207,6 @@ class InferenceEngine:
 
     def design_identity(self, prompt: str, seed: Optional[int] = None):
         """
-        Action: DESIGN. 
         Generates the physical Anchor Audio using the Creator model and calibration text.
         Then extracts the identity vector from the generated Anchor.
 
@@ -234,33 +233,46 @@ class InferenceEngine:
         anchor_path = os.path.join(self.config.paths.temp_dir, f"anchor_design_{seed}.wav")
         sf.write(anchor_path, wavs[0], fs)
         self.last_anchor_path = anchor_path
-        logger.info(f"Anchor persisted at {anchor_path}")
+        logger.info(f"Design Anchor persisted at {anchor_path}")
 
         self._extract_vectors(anchor_path, cal_text)
 
     def extract_identity(self, audio_path: str, transcript: Optional[str] = None):
         """
-        Action: CLONE.
-        Clones an identity from an existing Anchor Audio file provided by the user.
+        Clones an identity using a two-step normalization process:
+        1. Extracts initial identity from user audio.
+        2. Renders a new standard Anchor Audio using calibration text.
+        3. Re-extracts the consolidated identity from the clean Anchor.
 
         Args:
-            audio_path (str): Path to the source audio file.
-            transcript (Optional[str]): The exact text content of the audio for alignment.
+            audio_path (str): Path to the source audio file provided by the user.
+            transcript (Optional[str]): The exact text content of the source audio.
         """
         self.active_seed = 42
         set_global_seed(self.active_seed)
         
         if not os.path.exists(audio_path):
-            logger.error(f"Failed to find audio file: {audio_path}")
+            logger.error(f"Source audio file not found: {audio_path}")
             raise FileNotFoundError(f"Audio file not found: {audio_path}")
 
-        self.last_anchor_path = audio_path
-        logger.info(f"Extracting identity from source: {audio_path}")
+        logger.info(f"Step 1/3: Initial extraction from source: {audio_path}")
         self._extract_vectors(audio_path, transcript if transcript else "")
+
+        cal_text = CALIBRATION_TEXTS.get(self.lang, CALIBRATION_TEXTS["en"])
+        anchor_path = os.path.join(self.config.paths.temp_dir, f"anchor_clone_{int(time.time())}.wav")
+
+        logger.info("Step 2/3: Rendering normalized Calibration Anchor...")
+        self.render(cal_text, output_path=anchor_path)
+
+        logger.info("Step 3/3: Consolidating final identity from Calibration Anchor...")
+        self._extract_vectors(anchor_path, cal_text)
+        
+        self.last_anchor_path = anchor_path
+        logger.info(f"Consolidated Anchor persisted at {anchor_path}")
 
     def load_identity_from_state(self, vector: List[float], seed: int, anchor_path: Optional[str] = None):
         """
-        Restores a voice identity from its persisted state components (Vector and Seed).
+        Restores a voice identity from its persisted state components.
 
         Args:
             vector (List[float]): Speaker embedding list.
@@ -280,8 +292,7 @@ class InferenceEngine:
 
     def render(self, text: str, output_path: Optional[str] = None) -> str:
         """
-        Action: PREVIEW/RENDER.
-        Synthesizes audio using the consolidated identity vector and the target text.
+        Synthesizes audio using the active identity vector and target text.
 
         Args:
             text (str): The text string to synthesize.
@@ -291,7 +302,7 @@ class InferenceEngine:
             str: Path to the generated audio file.
         """
         if not self.active_identity or self.active_seed is None:
-            logger.error("Synthesis failed: Identity is not consolidated.")
+            logger.error("Synthesis failed: Active identity is missing.")
             raise ValueError("Identity incomplete (Vector or Seed missing).")
 
         set_global_seed(self.active_seed)
@@ -341,7 +352,7 @@ class VoiceBlender:
             alpha (float): Mixing factor between 0.0 and 1.0.
 
         Returns:
-            InferenceEngine: A new engine instance with the blended identity and its own Anchor.
+            InferenceEngine: A new engine instance with the blended identity.
         """
         logger.info(f"Blending engines A and B with alpha={alpha}")
         if engine_a.active_identity is None or engine_b.active_identity is None:

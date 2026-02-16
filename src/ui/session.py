@@ -88,7 +88,8 @@ class SessionManager:
             transcript (str): Text content of the audio.
         """
         engine = self.engine_a if track_id == "A" else self.engine_b
-        engine.clone_identity(audio_path, transcript)
+        # FIX: Correct method name is extract_identity, not clone_identity
+        engine.extract_identity(audio_path, transcript)
         if engine.last_anchor_path:
             self.register_temp_file(engine.last_anchor_path)
         self._cached_blend_engine = None
@@ -99,7 +100,7 @@ class SessionManager:
 
         Args:
             text (str): Phrase to synthesize.
-            blend_alpha (Optional[float]): The mix ratio (0.0 to 1.0).
+            blend_alpha (Optional[float]): The mix ratio.
 
         Returns:
             str: Path to the generated WAV file.
@@ -137,7 +138,6 @@ class SessionManager:
         alpha = metadata.get("blend")
         engine_to_save = None
         
-        # 1. Resolve Identity
         if alpha is not None and 0.0 < float(alpha) < 1.0:
             current_alpha = float(alpha)
             if self._cached_blend_engine is None or abs(self._last_blend_alpha - current_alpha) > 0.001:
@@ -150,11 +150,9 @@ class SessionManager:
         if not engine_to_save or not engine_to_save.active_identity:
             raise ValueError("Save failed: No active identity found.")
 
-        # 2. Semantic Indexing
         semantic_text = metadata.get("semantic_index", f"{name}. {description}")
         semantic_vector = self.embed_engine.generate_embedding(semantic_text)
 
-        # 3. Profile Construction
         profile = VoiceProfile(
             id=str(uuid.uuid4()),
             name=name,
@@ -167,7 +165,6 @@ class SessionManager:
             tags=tags
         )
         
-        # 4. Persistence
         self.store.add_profile(profile, anchor_source_path=engine_to_save.last_anchor_path)
         self.reset_workflow()
 

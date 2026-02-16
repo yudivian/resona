@@ -39,8 +39,7 @@ class EmbeddingModelProvider:
             model_id = self.config.models.semantic.repo_id
             use_cuda = "cuda" in self.config.system.compute.embed_device
             
-            # CRITICAL FIX: Absolute local path to maintain ONNX data integrity.
-            # Fixes "External data path ... escapes model directory" error.
+            # Critical Fix: Force local cache to ensure ONNX path integrity
             cache_path = os.path.abspath(os.path.join(os.getcwd(), "data", "models_cache"))
             os.makedirs(cache_path, exist_ok=True)
             
@@ -83,7 +82,6 @@ class EmbeddingEngine:
             raise ValueError("Inference failed: Input text for embedding cannot be empty.")
         
         model = self.provider.get_model()
-        # embed() returns a generator of numpy arrays. We take the first one.
         generator = model.embed([text])
         vector = next(generator)
         return vector.tolist()

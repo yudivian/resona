@@ -13,8 +13,8 @@ class VoiceStore:
     Unified persistence layer using BeaverDB with native Vector Support.
     
     This class manages the master metadata dictionary and specialized 
-    vector collections for identity and semantic search, complying with 
-    BeaverDB's indexing API.
+    vector collections for identity and semantic search, strictly adhering 
+    to BeaverDB's API for indexing and retrieval.
     """
 
     def __init__(self, config: AppConfig):
@@ -25,15 +25,11 @@ class VoiceStore:
             config (AppConfig): Global configuration for paths and DB settings.
         """
         self.config = config
-        # Ensure database directory exists
         os.makedirs(os.path.dirname(config.paths.db_file), exist_ok=True)
-        # Ensure assets directory exists for audio anchors
         os.makedirs(config.paths.assets_dir, exist_ok=True)
 
         self.db = BeaverDB(config.paths.db_file)
-        # Master dictionary for full JSON profile data
         self.master_data = self.db.dict("voices_data")
-        # Vector collections
         self.identity_index = self.db.collection("idx_identity")
         self.semantic_index = self.db.collection("idx_semantic")
 
@@ -60,7 +56,7 @@ class VoiceStore:
         self.master_data[profile.id] = profile.model_dump()
         
         # 3. Identity Vector Indexing
-        # FIX: Using .index() instead of .add() and 'text' instead of 'content'
+        # FIX: Using .index() and 'text' attribute as required by BeaverDB
         doc_identity = Document(
             id=profile.id,
             embedding=profile.identity_embedding,

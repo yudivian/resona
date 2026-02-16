@@ -13,26 +13,24 @@ logger = logging.getLogger(__name__)
 
 class SessionManager:
     """
-    Main controller linking UI interactions to Backend Logic and Persistence.
+    Core orchestrator linking UI interactions to Backend Logic and Persistence.
     
-    Manages the lifecycle of dual inference engines, temporary file registries, 
-    and orchestrates the saving process by integrating semantic embedding 
-    generation and the VoiceStore persistence layer.
+    Manages dual inference engines, temporary files, and coordinates with 
+    VoiceStore and EmbeddingEngine for secure profile materialization.
     """
 
     def __init__(self, config: AppConfig):
         """
-        Initializes engines and persistence layers.
+        Initializes the session manager with required providers and stores.
 
         Args:
-            config (AppConfig): Global application configuration.
+            config (AppConfig): Global configuration for paths and hardware.
         """
         self.config = config
         self.tts_provider = TTSModelProvider(config)
         self.engine_a = InferenceEngine(config, self.tts_provider)
         self.engine_b = InferenceEngine(config, self.tts_provider)
         
-        # Core Persistence and Semantic Components
         self.store = VoiceStore(config)
         self.embed_provider = EmbeddingModelProvider(config)
         self.embed_engine = EmbeddingEngine(config, self.embed_provider)
@@ -45,10 +43,10 @@ class SessionManager:
 
     def set_language(self, lang_code: str):
         """
-        Updates the target language for all active inference engines.
+        Sets the target language for all active inference engines.
 
         Args:
-            lang_code (str): The ISO language code (e.g., 'es', 'en').
+            lang_code (str): ISO language code (e.g., 'en', 'es').
         """
         if self.engine_a.lang != lang_code:
             self.engine_a.lang = lang_code
@@ -57,7 +55,7 @@ class SessionManager:
 
     def register_temp_file(self, path: str):
         """
-        Registers a temporary file for future cleanup.
+        Registers a temporary file path for session-based cleanup.
 
         Args:
             path (str): Absolute path to the file.
@@ -67,12 +65,12 @@ class SessionManager:
 
     def design_voice(self, track_id: str, prompt: str, seed: Optional[int] = None):
         """
-        Triggers Voice Design on the specific track.
+        Generates a voice identity from a design prompt for the specified track.
 
         Args:
             track_id (str): 'A' or 'B'.
-            prompt (str): Text description of the desired voice.
-            seed (Optional[int]): Generation seed for determinism.
+            prompt (str): Descriptive prompt.
+            seed (Optional[int]): Random seed.
         """
         engine = self.engine_a if track_id == "A" else self.engine_b
         engine.design_identity(prompt, seed)
@@ -82,12 +80,12 @@ class SessionManager:
 
     def clone_voice(self, track_id: str, audio_path: str, transcript: str):
         """
-        Extracts a voice identity from a reference audio file.
+        Clones a voice identity from a reference audio file.
 
         Args:
             track_id (str): 'A' or 'B'.
-            audio_path (str): Path to the reference WAV file.
-            transcript (str): Text spoken in the reference audio.
+            audio_path (str): Path to the WAV file.
+            transcript (str): Text content of the audio.
         """
         engine = self.engine_a if track_id == "A" else self.engine_b
         engine.clone_identity(audio_path, transcript)
@@ -97,14 +95,14 @@ class SessionManager:
 
     def preview_voice(self, text: str, blend_alpha: Optional[float] = None) -> str:
         """
-        Generates audio for a preview phrase using lazy evaluation for blending.
+        Synthesizes preview audio with Just-In-Time blending evaluation.
 
         Args:
             text (str): Phrase to synthesize.
             blend_alpha (Optional[float]): The mix ratio (0.0 to 1.0).
 
         Returns:
-            str: Absolute path to the generated WAV file.
+            str: Path to the generated WAV file.
         """
         target_engine = None
         if blend_alpha is None or blend_alpha == 0.0:
@@ -118,28 +116,28 @@ class SessionManager:
                 if self._cached_blend_engine.last_anchor_path:
                     self.register_temp_file(self._cached_blend_engine.last_anchor_path)
             target_engine = self._cached_blend_engine
-
-        if not target_engine.active_identity:
-            raise ValueError("Inference failed: Engine has no active identity.")
         
-        output_path = target_engine.render(text)
-        self.register_temp_file(output_path)
-        return output_path
+        if not target_engine.active_identity:
+             raise ValueError("Inference failed: Engine has no active identity.")
+
+        out_path = target_engine.render(text)
+        self.register_temp_file(out_path)
+        return out_path
 
     def save_session_voice(self, name: str, description: str, tags: List[str], metadata: Dict[str, Any]):
         """
-        Materializes the voice profile by ensuring identity generation and
-        persisting via VoiceStore with semantic indexing.
+        Orchestrates the save operation including JIT blending and semantic indexing.
 
         Args:
-            name (str): Voice profile name.
-            description (str): Visible description for the user.
-            tags (List[str]): List of classification tags.
-            metadata (Dict[str, Any]): Metadata including the semantic_index text.
+            name (str): Profile name.
+            description (str): Profile description.
+            tags (List[str]): List of tags.
+            metadata (Dict[str, Any]): Metadata for indexing.
         """
         alpha = metadata.get("blend")
         engine_to_save = None
         
+        # 1. Resolve Identity
         if alpha is not None and 0.0 < float(alpha) < 1.0:
             current_alpha = float(alpha)
             if self._cached_blend_engine is None or abs(self._last_blend_alpha - current_alpha) > 0.001:
@@ -150,12 +148,13 @@ class SessionManager:
             engine_to_save = self.engine_b if (alpha is not None and float(alpha) == 1.0) else self.engine_a
 
         if not engine_to_save or not engine_to_save.active_identity:
-            raise ValueError("Save failed: Target engine lacks a valid identity.")
+            raise ValueError("Save failed: No active identity found.")
 
-        # JIT Semantic Indexing
+        # 2. Semantic Indexing
         semantic_text = metadata.get("semantic_index", f"{name}. {description}")
         semantic_vector = self.embed_engine.generate_embedding(semantic_text)
 
+        # 3. Profile Construction
         profile = VoiceProfile(
             id=str(uuid.uuid4()),
             name=name,
@@ -168,11 +167,12 @@ class SessionManager:
             tags=tags
         )
         
+        # 4. Persistence
         self.store.add_profile(profile, anchor_source_path=engine_to_save.last_anchor_path)
         self.reset_workflow()
 
     def reset_workflow(self):
-        """Soft reset of the current session: cleans files and identities."""
+        """Soft reset of the current workflow state."""
         gc.collect()
         for path in self._temp_files_registry:
             try:
@@ -192,3 +192,10 @@ class SessionManager:
                     elif os.path.isdir(item_path): shutil.rmtree(item_path)
                 except Exception: pass
         self.reset_workflow()
+
+    def _reset_engine_states(self):
+        """Internal cleanup of engine instances."""
+        self._cached_blend_engine = None
+        self._last_blend_alpha = -1.0
+        self.engine_a.active_identity = None
+        self.engine_b.active_identity = None

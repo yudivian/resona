@@ -7,6 +7,7 @@ from typing import Optional, List, Dict, Any
 from src.models import AppConfig, VoiceProfile, SourceType, TrackType
 from src.backend.engine import TTSModelProvider, InferenceEngine, VoiceBlender
 from src.backend.embedding import EmbeddingModelProvider, EmbeddingEngine
+# FIXED: Correct import path for store
 from src.backend.store import VoiceStore
 
 logger = logging.getLogger(__name__)
@@ -14,17 +15,11 @@ logger = logging.getLogger(__name__)
 class SessionManager:
     """
     Core orchestrator linking UI interactions to Backend Logic and Persistence.
-    
-    Manages dual inference engines, temporary files, and coordinates with 
-    VoiceStore and EmbeddingEngine for secure profile materialization.
     """
 
     def __init__(self, config: AppConfig):
         """
         Initializes the session manager with required providers and stores.
-
-        Args:
-            config (AppConfig): Global configuration for paths and hardware.
         """
         self.config = config
         self.tts_provider = TTSModelProvider(config)
@@ -44,9 +39,6 @@ class SessionManager:
     def set_language(self, lang_code: str):
         """
         Sets the target language for all active inference engines.
-
-        Args:
-            lang_code (str): ISO language code (e.g., 'en', 'es').
         """
         if self.engine_a.lang != lang_code:
             self.engine_a.lang = lang_code
@@ -56,9 +48,6 @@ class SessionManager:
     def register_temp_file(self, path: str):
         """
         Registers a temporary file path for session-based cleanup.
-
-        Args:
-            path (str): Absolute path to the file.
         """
         if path and path not in self._temp_files_registry:
             self._temp_files_registry.append(path)
@@ -66,11 +55,6 @@ class SessionManager:
     def design_voice(self, track_id: str, prompt: str, seed: Optional[int] = None):
         """
         Generates a voice identity from a design prompt for the specified track.
-
-        Args:
-            track_id (str): 'A' or 'B'.
-            prompt (str): Descriptive prompt.
-            seed (Optional[int]): Random seed.
         """
         engine = self.engine_a if track_id == "A" else self.engine_b
         engine.design_identity(prompt, seed)
@@ -81,14 +65,9 @@ class SessionManager:
     def clone_voice(self, track_id: str, audio_path: str, transcript: str):
         """
         Clones a voice identity from a reference audio file.
-
-        Args:
-            track_id (str): 'A' or 'B'.
-            audio_path (str): Path to the WAV file.
-            transcript (str): Text content of the audio.
         """
         engine = self.engine_a if track_id == "A" else self.engine_b
-        # FIX: Correct method name is extract_identity, not clone_identity
+        # FIXED: Correct method name extract_identity
         engine.extract_identity(audio_path, transcript)
         if engine.last_anchor_path:
             self.register_temp_file(engine.last_anchor_path)
@@ -97,13 +76,6 @@ class SessionManager:
     def preview_voice(self, text: str, blend_alpha: Optional[float] = None) -> str:
         """
         Synthesizes preview audio with Just-In-Time blending evaluation.
-
-        Args:
-            text (str): Phrase to synthesize.
-            blend_alpha (Optional[float]): The mix ratio.
-
-        Returns:
-            str: Path to the generated WAV file.
         """
         target_engine = None
         if blend_alpha is None or blend_alpha == 0.0:
@@ -128,12 +100,6 @@ class SessionManager:
     def save_session_voice(self, name: str, description: str, tags: List[str], metadata: Dict[str, Any]):
         """
         Orchestrates the save operation including JIT blending and semantic indexing.
-
-        Args:
-            name (str): Profile name.
-            description (str): Profile description.
-            tags (List[str]): List of tags.
-            metadata (Dict[str, Any]): Metadata for indexing.
         """
         alpha = metadata.get("blend")
         engine_to_save = None

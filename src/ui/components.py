@@ -1,6 +1,7 @@
 import streamlit as st
 import os
 import logging
+import random
 from src.ui.session import SessionManager
 from src.models import SourceType
 
@@ -14,11 +15,7 @@ SUPPORTED_LANGUAGES = {
 
 def init_page():
     """
-    Configures the global Streamlit page settings and handles the deferred 
-    UI reset mechanism.
-    
-    This function must be called first to ensure state keys are cleared 
-    before widget instantiation.
+    Configures page settings and handles the deferred UI reset mechanism.
     """
     st.set_page_config(
         page_title="Resona CAD",
@@ -41,14 +38,14 @@ def init_page():
 
 def _perform_actual_reset():
     """
-    Internal helper that physically removes session state keys.
-    Forces widgets to render with default values in the current rerun.
+    Clears session state keys including seeds and inputs.
     """
     keys_to_reset = [
         "track_A_ready", "track_B_ready", "p_A", "p_B", "ref_A", "ref_B",
         "up_A", "mic_A", "up_B", "mic_B", "m_A", "m_B", "lib_A", "lib_B",
         "save_name", "save_desc", "save_tags", "mix_checkbox", "blend_slider",
-        "tts_final", "preview_txt_A", "preview_txt_B"
+        "tts_final", "preview_txt_A", "preview_txt_B", 
+        "seed_A", "seed_B" # Reset seeds as well
     ]
     for key in keys_to_reset:
         if key in st.session_state:
@@ -59,10 +56,7 @@ def _perform_actual_reset():
 
 def render_debug_panel(session: SessionManager):
     """
-    Renders the sidebar with system health metrics and maintenance tools.
-    
-    Args:
-        session (SessionManager): The active session instance.
+    Renders sidebar maintenance tools.
     """
     with st.sidebar:
         st.header("🛠️ System Status")
@@ -81,15 +75,7 @@ def render_debug_panel(session: SessionManager):
 
 def _save_temp_file(session: SessionManager, uploaded_file, prefix: str) -> str:
     """
-    Saves an uploaded file to the session's temp directory.
-
-    Args:
-        session (SessionManager): Active session.
-        uploaded_file: Streamlit UploadedFile.
-        prefix (str): Prefix for the filename.
-
-    Returns:
-        str: Absolute path to the saved file.
+    Saves uploaded file to temp directory.
     """
     temp_dir = session.config.paths.temp_dir
     os.makedirs(temp_dir, exist_ok=True)
@@ -101,20 +87,12 @@ def _save_temp_file(session: SessionManager, uploaded_file, prefix: str) -> str:
     return file_path
 
 def _mark_track_dirty(track_id: str):
-    """Callback to invalidate track readiness when inputs change."""
+    """Invalidates track readiness."""
     st.session_state[f"track_{track_id}_ready"] = False
 
 def _ensure_track_identity(session: SessionManager, track_id: str) -> bool:
     """
-    Ensures that the specific track has a materialized voice identity.
-    Triggers Just-In-Time generation based on the selected mode.
-
-    Args:
-        session (SessionManager): Active session.
-        track_id (str): 'A' or 'B'.
-
-    Returns:
-        bool: True if identity is valid.
+    Triggers identity generation. Handles Seed logic for Design mode.
     """
     if st.session_state.get(f"track_{track_id}_ready", False):
         return True
@@ -128,8 +106,16 @@ def _ensure_track_identity(session: SessionManager, track_id: str) -> bool:
             if not prompt:
                 st.warning(f"Track {track_id}: Missing design prompt.")
                 return False
-            with st.spinner(f"Designing Track {track_id}..."):
-                session.design_voice(track_id, prompt)
+            
+            # --- Seed Management ---
+            seed_key = f"seed_{track_id}"
+            if seed_key not in st.session_state:
+                st.session_state[seed_key] = random.randint(0, 999999)
+            current_seed = st.session_state[seed_key]
+
+            with st.spinner(f"Designing Track {track_id} (Seed: {current_seed})..."):
+                # Pass the seed explicitly to the session
+                session.design_voice(track_id, prompt, seed=current_seed)
 
         elif mode == SourceType.CLONE.value:
             method = st.session_state.get(f"m_{track_id}")
@@ -142,8 +128,6 @@ def _ensure_track_identity(session: SessionManager, track_id: str) -> bool:
             with st.spinner(f"Cloning Track {track_id}..."):
                 session.clone_voice(track_id, path, ref)
         
-        # Library mode logic would go here if implemented
-
         st.session_state[f"track_{track_id}_ready"] = True
         return True
     except Exception as e:
@@ -152,11 +136,7 @@ def _ensure_track_identity(session: SessionManager, track_id: str) -> bool:
 
 def _render_track_config(session: SessionManager, track_id: str):
     """
-    Renders the configuration interface for a specific voice track.
-
-    Args:
-        session (SessionManager): Active session.
-        track_id (str): 'A' or 'B'.
+    Renders track config. Includes Reroll Button (Dice) for Design mode.
     """
     st.markdown(f"### 🎚️ Track {track_id}")
     mode_key = f"mode_{track_id}"
@@ -172,7 +152,18 @@ def _render_track_config(session: SessionManager, track_id: str):
     current_mode = st.session_state[mode_key]
     
     if current_mode == SourceType.DESIGN.value:
-        st.text_area("Prompt", key=f"p_{track_id}", height=100, on_change=_mark_track_dirty, args=(track_id,))
+        # Layout: Prompt area + Reroll button side-by-side
+        col_text, col_btn = st.columns([0.85, 0.15])
+        with col_text:
+            st.text_area("Prompt", key=f"p_{track_id}", height=100, on_change=_mark_track_dirty, args=(track_id,))
+        with col_btn:
+            st.markdown("<br><br>", unsafe_allow_html=True) # Vertical alignment hack
+            # Reroll Button
+            if st.button("🎲", key=f"reroll_{track_id}", help="New Variation (Change Seed)"):
+                st.session_state[f"seed_{track_id}"] = random.randint(0, 999999)
+                _mark_track_dirty(track_id)
+                st.toast(f"New seed set for Track {track_id}")
+
     elif current_mode == SourceType.CLONE.value:
         m = st.radio(f"Input ({track_id})", ["Upload", "Mic"], key=f"m_{track_id}", horizontal=True, on_change=_mark_track_dirty, args=(track_id,))
         if m == "Upload":
@@ -196,11 +187,7 @@ def _render_track_config(session: SessionManager, track_id: str):
 
 def render_studio(session: SessionManager):
     """
-    Main Studio Interface. Orchestrates track configuration, blending 
-    operations, and final persistence.
-
-    Args:
-        session (SessionManager): Active session controller.
+    Main Studio Interface.
     """
     st.subheader("🌍 Project Settings")
     lang_name = st.selectbox("Language", list(SUPPORTED_LANGUAGES.keys()), key="project_lang")
@@ -242,7 +229,6 @@ def render_studio(session: SessionManager):
                 
                 if ready_a and ready_b:
                     try:
-                        # Construct Semantic Index Context
                         context = [f"Name: {name}", f"Note: {desc}", f"Tags: {tags_raw}"]
                         if st.session_state.get("mode_A") == SourceType.DESIGN.value:
                             context.append(f"Prompt A: {st.session_state.get('p_A')}")

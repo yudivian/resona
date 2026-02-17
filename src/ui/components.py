@@ -450,17 +450,16 @@ def render_studio(session: SessionManager):
         
         if st.button("Confirm Save", use_container_width=True):
             if name:
-                context = [f"Name: {name}", f"Note: {desc}", f"Tags: {tags_raw}"]
-                if st.session_state.get("mode_A") == SourceType.DESIGN.value:
-                    context.append(f"Prompt A: {st.session_state.get('p_A')}")
-                if is_mix and st.session_state.get("mode_B") == SourceType.DESIGN.value:
-                    context.append(f"Prompt B: {st.session_state.get('p_B')}")
-                
                 meta = {
                     "blend": alpha if is_mix else None,
                     "source_type": SourceType.BLEND if is_mix else SourceType.DESIGN,
-                    "semantic_index": ". ".join(context)
                 }
+                
+                if st.session_state.get("mode_A") == SourceType.DESIGN.value:
+                    meta["design_prompt_A"] = st.session_state.get("p_A", "")
+                
+                if is_mix and st.session_state.get("mode_B") == SourceType.DESIGN.value:
+                    meta["design_prompt_B"] = st.session_state.get("p_B", "")
                 
                 _dialog_save_execution(
                     session, 

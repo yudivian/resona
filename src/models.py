@@ -84,6 +84,7 @@ class VoiceProfile(BaseModel):
     
     is_refined: bool = False
     refinement_prompt: Optional[str] = None
+    source_prompts: Dict[str, str] = Field(default_factory=dict)
 
     description: Optional[str] = None
     semantic_embedding: Optional[List[float]] = None

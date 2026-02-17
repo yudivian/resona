@@ -220,45 +220,68 @@ class SessionManager:
 
     def save_session_voice(self, name: str, description: str, tags: List[str], metadata: Dict[str, Any]):
         """
-        Materializes the current session state into a permanent VoiceProfile.
+        Persists the current voice state as a permanent VoiceProfile.
 
-        This orchestration method gathers all necessary data to persist a voice:
-        1. It resolves the final identity vector (handling JIT blending if necessary).
-        2. It generates a semantic embedding using the EmbeddingEngine for future searchability.
-        3. It constructs the VoiceProfile object with correct metadata.
-        4. It delegates the physical storage to the VoiceStore.
+        This method orchestrates the transition from a temporary session state to a 
+        stored library item. It handles the logic for both single-track and blended 
+        identities. Crucially, it extracts the original design prompts from the 
+        metadata payload and stores them in the `source_prompts` field of the 
+        profile, ensuring the creative DNA of the voice is preserved. It then 
+        constructs a rich semantic index using these prompts, the description, and 
+        tags to enable advanced natural language search.
 
         Args:
-            name (str): The display name for the new voice profile.
-            description (str): A human-readable description for UI visibility.
-            tags (List[str]): A list of string tags for classification.
-            metadata (Dict[str, Any]): Additional context, specifically containing the
-                                       'semantic_index' text and 'source_type'.
+            name (str): The display name for the new library entry.
+            description (str): A detailed user-provided description.
+            tags (List[str]): Categorization labels.
+            metadata (Dict[str, Any]): A dictionary containing session context, 
+                including blend parameters and raw design prompts.
 
         Raises:
-            ValueError: If the engine being saved has no active identity.
+            ValueError: If the target engine lacks a valid active identity to save.
         """
         alpha = metadata.get("blend")
         engine_to_save = None
         
-        # Resolve the specific engine instance to save (A, B, or a Blend)
+        # Determine the source engine based on the blend factor
         if alpha is not None and 0.0 < float(alpha) < 1.0:
             current_alpha = float(alpha)
+            # Re-blend if necessary to ensure the cached engine matches the requested alpha
             if self._cached_blend_engine is None or abs(self._last_blend_alpha - current_alpha) > 0.001:
                 self._cached_blend_engine = VoiceBlender.blend(self.engine_a, self.engine_b, current_alpha)
                 self._last_blend_alpha = current_alpha
             engine_to_save = self._cached_blend_engine
         else:
+            # Select the appropriate single engine (Track A or Track B)
             engine_to_save = self.engine_b if (alpha is not None and float(alpha) == 1.0) else self.engine_a
 
         if not engine_to_save or not engine_to_save.active_identity:
-            raise ValueError("Save failed: The target engine has no active identity to save.")
+            raise ValueError("Save failed: No active identity detected in the target engine.")
 
-        # Generate the semantic vector for search capability
-        semantic_text = metadata.get("semantic_index", f"{name}. {description}")
+        # Extract design prompts from metadata to persist them in the database
+        source_prompts = {}
+        if "design_prompt_A" in metadata:
+            source_prompts["A"] = metadata["design_prompt_A"]
+        if "design_prompt_B" in metadata:
+            source_prompts["B"] = metadata["design_prompt_B"]
+            
+        # Concatenate prompts for the semantic index
+        prompt_context_list = [f"Track {k}: {v}" for k, v in source_prompts.items()]
+        combined_prompt_text = " | ".join(prompt_context_list)
+
+        # Generate the semantic vector using the centralized helper
+        # This ensures the embedding includes Name, Language, Tags, Description, and Prompts
+        semantic_text = self._build_semantic_context(
+            name=name,
+            lang=engine_to_save.lang,
+            tags=tags,
+            desc=description,
+            prompt_context=combined_prompt_text
+        )
         semantic_vector = self.embed_engine.generate_embedding(semantic_text)
 
-        # Construct the persistence model
+        # Create the VoiceProfile object
+        # We explicitly populate 'source_prompts' so the original text is saved to the DB
         profile = VoiceProfile(
             id=str(uuid.uuid4()),
             name=name,
@@ -268,12 +291,17 @@ class SessionManager:
             seed=engine_to_save.active_seed,
             language=engine_to_save.lang,
             source_type=metadata.get("source_type", SourceType.DESIGN),
-            tags=tags
+            tags=tags,
+            source_prompts=source_prompts, # Persist the raw prompts
+            refinement_prompt=combined_prompt_text # Store combined text for quick reference
         )
         
+        # Persist to the store
         self.store.add_profile(profile, anchor_source_path=engine_to_save.last_anchor_path)
-        self.reset_workflow()
-
+        
+        # Clean up temporary resources
+        self.reset_workflow()  
+  
     def reset_workflow(self):
         """
         Resets the session to a clean state.
@@ -389,46 +417,79 @@ class SessionManager:
         
     def update_voice_metadata(self, voice_id: str, new_name: str, new_desc: str, new_tags: List[str]):
         """
-        Updates the metadata of an existing voice and regenerates its semantic index.
-        
-        This method performs a critical synchronization:
-        1. It updates the descriptive fields (Name, Description, Tags).
-        2. It RE-CALCULATES the semantic embedding vector to ensure the voice 
-           remains discoverable via the new terms.
-        3. It persists the changes using an upsert strategy via the store.
+        Modifies the descriptive metadata of an existing voice and refreshes its semantic index.
+
+        This method updates the mutable fields of a VoiceProfile (name, description, tags). 
+        Crucially, it recalculates the semantic embedding to reflect these changes while 
+        preserving the immutable acoustic context. It retrieves the original design prompts 
+        and language from the persisted profile to ensure the new vector maintains the 
+        full creative history of the voice, allowing it to remain searchable by its 
+        origin story even after being renamed.
 
         Args:
-            voice_id (str): The unique UUID of the profile to update.
-            new_name (str): The new display name.
-            new_desc (str): The new description text.
-            new_tags (List[str]): The new list of tags.
+            voice_id (str): The unique identifier of the profile to update.
+            new_name (str): The updated display name.
+            new_desc (str): The updated description text.
+            new_tags (List[str]): The updated collection of tags.
 
         Raises:
-            ValueError: If the voice_id does not exist.
+            ValueError: If the specified voice_id is not found in the storage layer.
         """
-        # 1. Fetch existing profile
         profile = self.store.get_profile(voice_id)
         if not profile:
-            raise ValueError(f"Cannot update: Voice {voice_id} not found.")
+            raise ValueError(f"Update failed: Voice profile {voice_id} not found.")
 
-        # 2. Update Scalar Fields
-        # We modify the object in memory directly.
         profile.name = new_name
         profile.description = new_desc
         profile.tags = new_tags
-        
-        # 3. Regenerate Semantic Vector (Critical Step)
-        # We construct a rich context string to improve search relevance.
-        # Format: "Name: {name}. Desc: {desc}. Tags: {tags}"
-        semantic_context = f"Name: {new_name}. Desc: {new_desc}. Tags: {', '.join(new_tags)}"
-        
-        # We use the embedding engine already initialized in the session
-        new_semantic_vector = self.embed_engine.generate_embedding(semantic_context)
+
+        prompt_context_list = [f"Track {k}: {v}" for k, v in profile.source_prompts.items()]
+        combined_prompt_text = " | ".join(prompt_context_list)
+
+        semantic_text = self._build_semantic_context(
+            name=new_name,
+            lang=profile.language,
+            tags=new_tags,
+            desc=new_desc,
+            prompt_context=combined_prompt_text
+        )
+
+        new_semantic_vector = self.embed_engine.generate_embedding(semantic_text)
         profile.semantic_embedding = new_semantic_vector
 
-        # 4. Persist (Upsert)
-        # We reuse add_profile. By passing anchor_source_path=None, we tell the store
-        # to ONLY update the metadata/vectors and leave the physical audio file untouched.
         self.store.add_profile(profile, anchor_source_path=None)
+        
+    def _build_semantic_context(self, name: str, lang: str, tags: List[str], desc: str, prompt_context: str) -> str:
+        """
+        Constructs a comprehensive textual representation for semantic indexing.
+
+        This internal utility aggregates all descriptive metadata and design 
+        prompts into a single string. This "semantic document" is used by the 
+        embedding engine to create a vector that represents the voice's 
+        identity and creative origin, enabling high-quality semantic retrieval.
+
+        Args:
+            name (str): The display name assigned to the voice profile.
+            lang (str): The primary language code associated with the voice.
+            tags (List[str]): User-defined labels for categorization.
+            desc (str): A detailed description of the voice's characteristics.
+            prompt_context (str): The raw design prompts used during creation.
+
+        Returns:
+            str: A formatted string containing the full context for vectorization.
+        """
+        safe_desc = desc or ""
+        safe_prompt = prompt_context or ""
+        tags_str = ", ".join(tags) if tags else ""
+
+        components = [
+            f"Voice Name: {name}",
+            f"Language: {lang}",
+            f"Tags: {tags_str}",
+            f"Description: {safe_desc}"
+        ]
+        
+        if safe_prompt:
+            components.append(f"Origin Context: {safe_prompt}")
             
-        logger.info(f"Metadata and semantic index updated for voice: {voice_id}")
+        return ". ".join(components)

@@ -140,38 +140,41 @@ class SessionManager:
 
     def load_voice_from_library(self, track_id: str, voice_id: str):
         """
-        Rehydrates a pre-existing voice profile from storage into an active engine.
+        Loads a persisted voice profile from the store into the specified track engine.
 
-        This method performs the critical task of "loading" a saved voice. It retrieves
-        the full profile from the store, extracts the identity embedding and seed,
-        and directly injects them into the target InferenceEngine state. This bypasses
-        the generation steps (design/clone) and sets the track type to PREEXISTING.
+        This method retrieves the profile, rehydrates the inference engine with the 
+        stored identity vector, and updates the session's track metadata to reflect 
+        that the track is now using a pre-existing asset.
 
         Args:
-            track_id (str): The identifier of the track to load the voice into ('A' or 'B').
-            voice_id (str): The UUID of the voice profile to load.
+            track_id (str): The target track identifier ("A" or "B").
+            voice_id (str): The unique identifier of the profile in the store.
 
         Raises:
-            ValueError: If the provided voice_id does not exist in the VoiceStore.
+            ValueError: If the voice_id does not exist in the database.
         """
         profile = self.store.get_profile(voice_id)
         if not profile:
-            raise ValueError(f"Voice ID {voice_id} not found in library.")
+            raise ValueError(f"Voice profile {voice_id} not found.")
 
         engine = self.engine_a if track_id == "A" else self.engine_b
         
-        # Inject the stored vectors directly into the active engine state
-        engine.active_identity = profile.identity_embedding
-        engine.active_seed = profile.seed
+        # We use the engine's internal method to transform the stored List[float] 
+        # back into a VoiceClonePromptItem, passing all required metadata.
+        engine.load_identity_from_state(
+            vector=profile.identity_embedding,
+            seed=profile.seed,
+            anchor_path=profile.anchor_audio_path
+        )
         
-        # Update the internal state to reflect that this is a persisted voice
+        # IMPORTANT: Maintaining your original logic for TrackType tracking
         if track_id == "A":
             self.track_a_type = TrackType.PREEXISTING
         else:
             self.track_b_type = TrackType.PREEXISTING
             
-        # Invalidate any cached mix since the source identity has changed
         self._cached_blend_engine = None
+        logger.info(f"Voice '{profile.name}' loaded into Track {track_id} (Type: PREEXISTING)")
 
     def preview_voice(self, text: str, blend_alpha: Optional[float] = None) -> str:
         """
@@ -383,3 +386,49 @@ class SessionManager:
         # We perform a full engine reset if there's a risk of stale identities
         self._reset_engine_states()
         logger.info(f"Deleted voice {voice_id} and synchronized engine states.")
+        
+    def update_voice_metadata(self, voice_id: str, new_name: str, new_desc: str, new_tags: List[str]):
+        """
+        Updates the metadata of an existing voice and regenerates its semantic index.
+        
+        This method performs a critical synchronization:
+        1. It updates the descriptive fields (Name, Description, Tags).
+        2. It RE-CALCULATES the semantic embedding vector to ensure the voice 
+           remains discoverable via the new terms.
+        3. It persists the changes using an upsert strategy via the store.
+
+        Args:
+            voice_id (str): The unique UUID of the profile to update.
+            new_name (str): The new display name.
+            new_desc (str): The new description text.
+            new_tags (List[str]): The new list of tags.
+
+        Raises:
+            ValueError: If the voice_id does not exist.
+        """
+        # 1. Fetch existing profile
+        profile = self.store.get_profile(voice_id)
+        if not profile:
+            raise ValueError(f"Cannot update: Voice {voice_id} not found.")
+
+        # 2. Update Scalar Fields
+        # We modify the object in memory directly.
+        profile.name = new_name
+        profile.description = new_desc
+        profile.tags = new_tags
+        
+        # 3. Regenerate Semantic Vector (Critical Step)
+        # We construct a rich context string to improve search relevance.
+        # Format: "Name: {name}. Desc: {desc}. Tags: {tags}"
+        semantic_context = f"Name: {new_name}. Desc: {new_desc}. Tags: {', '.join(new_tags)}"
+        
+        # We use the embedding engine already initialized in the session
+        new_semantic_vector = self.embed_engine.generate_embedding(semantic_context)
+        profile.semantic_embedding = new_semantic_vector
+
+        # 4. Persist (Upsert)
+        # We reuse add_profile. By passing anchor_source_path=None, we tell the store
+        # to ONLY update the metadata/vectors and leave the physical audio file untouched.
+        self.store.add_profile(profile, anchor_source_path=None)
+            
+        logger.info(f"Metadata and semantic index updated for voice: {voice_id}")

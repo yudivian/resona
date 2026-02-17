@@ -8,6 +8,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from src.config import settings
 from src.ui.session import SessionManager
 from src.ui.components import init_page, render_debug_panel, render_studio
+from src.ui.explorer import render_explorer  
 
 logger = logging.getLogger(__name__)
 if not logger.handlers:
@@ -38,8 +39,7 @@ with tab_studio:
     render_studio(session)
 
 with tab_library:
-    st.header("Voice Library")
-    st.info("🚧 Library browser coming in Phase 5...")
+    render_explorer(session)
 
 with tab_search:
     st.header("Semantic Search")

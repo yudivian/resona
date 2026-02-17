@@ -98,6 +98,52 @@ class VoiceStore:
         logger.info(f"Profile {profile.id} persisted and indexed successfully.")
         return profile.id
 
+    def delete_profile(self, profile_id: str):
+        """
+        Permanently deletes a voice profile from the database, its associated 
+        vector indices, and the physical anchor audio file.
+
+        This method strictly follows the BeaverDB API:
+        1. Deletes metadata from the master dictionary using pop/del.
+        2. Removes vector entries from collections using drop().
+        3. Physically deletes the reference WAV file from the assets directory.
+
+        Args:
+            profile_id (str): The unique UUID of the profile to remove.
+        """
+        # 1. Retrieve profile to find the physical asset path
+        data = self.master_data.get(profile_id)
+        if not data:
+            logger.warning(f"Delete failed: Profile {profile_id} not found.")
+            return
+
+        profile = VoiceProfile(**data)
+
+        # 2. Remove physical audio asset from disk
+        if profile.anchor_audio_path:
+            file_path = os.path.join(self.config.paths.assets_dir, profile.anchor_audio_path)
+            if os.path.exists(file_path):
+                try:
+                    os.remove(file_path)
+                    logger.info(f"Deleted physical asset: {file_path}")
+                except Exception as e:
+                    logger.error(f"Failed to delete physical asset {file_path}: {e}")
+
+        # 3. Delete metadata from BeaverDB dictionary
+        # pop() is safer as it handles the removal and allows verification
+        self.master_data.pop(profile_id, None)
+
+        # 4. Delete vectors from collections using BeaverDB drop()
+        # BeaverDB drop expects a document identifier or the document itself
+        try:
+            self.identity_index.drop(profile_id)
+            if profile.semantic_embedding:
+                self.semantic_index.drop(profile_id)
+        except Exception as e:
+            logger.error(f"Error dropping vectors for {profile_id} in BeaverDB: {e}")
+
+        logger.info(f"Profile {profile_id} successfully removed from store and indices.")
+    
     def get_profile(self, profile_id: str) -> Optional[VoiceProfile]:
         """
         Retrieves a single VoiceProfile object by its unique identifier.

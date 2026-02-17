@@ -143,9 +143,9 @@ class SessionManager:
         Rehydrates a pre-existing voice profile from storage into an active engine.
 
         This method performs the critical task of "loading" a saved voice. It retrieves
-        the full profile from the store. Crucially, it uses `engine.load_identity_from_state`
-        to properly convert the raw vector list into the `VoiceClonePromptItem` object
-        required by the synthesis model, preventing type errors during rendering.
+        the full profile from the store, extracts the identity embedding and seed,
+        and directly injects them into the target InferenceEngine state. This bypasses
+        the generation steps (design/clone) and sets the track type to PREEXISTING.
 
         Args:
             track_id (str): The identifier of the track to load the voice into ('A' or 'B').
@@ -160,13 +160,9 @@ class SessionManager:
 
         engine = self.engine_a if track_id == "A" else self.engine_b
         
-        # FIX: Use the engine's method to reconstruct the proper identity object
-        # instead of assigning the raw vector list directly.
-        engine.load_identity_from_state(
-            vector=profile.identity_embedding,
-            seed=profile.seed,
-            anchor_path=profile.anchor_audio_path
-        )
+        # Inject the stored vectors directly into the active engine state
+        engine.active_identity = profile.identity_embedding
+        engine.active_seed = profile.seed
         
         # Update the internal state to reflect that this is a persisted voice
         if track_id == "A":
@@ -319,3 +315,71 @@ class SessionManager:
         self._last_blend_alpha = -1.0
         self.engine_a.active_identity = None
         self.engine_b.active_identity = None
+        
+    def export_voice(self, voice_id: str) -> bytes:
+        """
+        Retrieves a voice profile and its associated assets to create a Resona Bundle.
+        
+        It fetches the profile from the store, locates the physical anchor audio file,
+        and uses the VoiceBundleIO service to generate a portable binary package.
+        """
+        from src.backend.io import VoiceBundleIO
+        
+        profile = self.store.get_profile(voice_id)
+        if not profile:
+            raise ValueError(f"Voice profile {voice_id} not found.")
+
+        # Resolve the absolute path of the anchor audio
+        anchor_path = os.path.join(self.config.paths.assets_dir, profile.anchor_audio_path)
+        if not os.path.exists(anchor_path):
+            raise FileNotFoundError(f"Anchor audio file missing at {anchor_path}")
+
+        with open(anchor_path, "rb") as f:
+            anchor_bytes = f.read()
+
+        return VoiceBundleIO.pack_bundle(
+            profile=profile,
+            identity_vector=profile.identity_embedding,
+            anchor_audio_bytes=anchor_bytes
+        )
+
+    def import_voice(self, bundle_bytes: bytes):
+        """
+        Unpacks a Resona Bundle and integrates it into the local store.
+        
+        It extracts the metadata and audio, persists the audio file into the 
+        assets directory, and registers the profile in BeaverDB.
+        """
+        from src.backend.io import VoiceBundleIO
+        
+        profile_dict, identity_vector, anchor_bytes = VoiceBundleIO.unpack_bundle(bundle_bytes)
+        
+        # Reconstruct the profile to ensure validation
+        profile = VoiceProfile(**profile_dict)
+        profile.identity_embedding = identity_vector
+        
+        # Save the audio file to the assets directory
+        target_path = os.path.join(self.config.paths.assets_dir, profile.anchor_audio_path)
+        os.makedirs(os.path.dirname(target_path), exist_ok=True)
+        
+        with open(target_path, "wb") as f:
+            f.write(anchor_bytes)
+            
+        # Persist the profile in the store (BeaverDB)
+        self.store.add_profile(profile)
+        logger.info(f"Imported voice bundle: {profile.name} ({profile.id})")
+
+    def delete_voice(self, voice_id: str):
+        """
+        Removes a voice profile from the system and synchronizes engine states.
+        
+        If the deleted voice is currently loaded in any inference engine, 
+        the engine state is cleared to maintain system integrity.
+        """
+        # 1. Physical and DB deletion
+        self.store.delete_profile(voice_id)
+        
+        # 2. State synchronization: Clear engines if they were using this voice
+        # We perform a full engine reset if there's a risk of stale identities
+        self._reset_engine_states()
+        logger.info(f"Deleted voice {voice_id} and synchronized engine states.")

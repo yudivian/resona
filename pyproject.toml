@@ -23,5 +23,12 @@ dependencies = [
     "llvmlite>=0.43.0",
 ]
 
+[tool.setuptools]
+packages = ["src"]
+
+
 [tool.uv.sources]
 qwen-tts = { git = "https://github.com/QwenLM/Qwen3-TTS.git" }
+
+[project.scripts]
+resona = "src.cli:main"

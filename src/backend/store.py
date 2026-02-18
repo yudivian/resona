@@ -111,7 +111,7 @@ class VoiceStore:
         Args:
             profile_id (str): The unique UUID of the profile to remove.
         """
-        # 1. Retrieve profile to find the physical asset path
+
         data = self.master_data.get(profile_id)
         if not data:
             logger.warning(f"Delete failed: Profile {profile_id} not found.")
@@ -119,7 +119,6 @@ class VoiceStore:
 
         profile = VoiceProfile(**data)
 
-        # 2. Remove physical audio asset from disk
         if profile.anchor_audio_path:
             file_path = os.path.join(self.config.paths.assets_dir, profile.anchor_audio_path)
             if os.path.exists(file_path):
@@ -129,12 +128,8 @@ class VoiceStore:
                 except Exception as e:
                     logger.error(f"Failed to delete physical asset {file_path}: {e}")
 
-        # 3. Delete metadata from BeaverDB dictionary
-        # pop() is safer as it handles the removal and allows verification
         self.master_data.pop(profile_id, None)
 
-        # 4. Delete vectors from collections using BeaverDB drop()
-        # BeaverDB drop expects a document identifier or the document itself
         try:
             self.identity_index.drop(profile_id)
             if profile.semantic_embedding:
@@ -177,3 +172,84 @@ class VoiceStore:
                                 stored in the database.
         """
         return [VoiceProfile(**data) for data in self.master_data.values()]
+    
+    def search_semantic(self, query_vector: List[float], limit: int = 10) -> List[VoiceProfile]:
+        """
+        Performs a semantic similarity search against the stored voice profiles using cosine similarity.
+
+        This method iterates through the available profiles, calculates the cosine similarity
+        between the query vector and each profile's semantic embedding, and returns the
+        most relevant matches sorted by descending similarity score. It leverages NumPy for
+        vector operations to ensure efficient calculation of the dot product and norms.
+
+        Args:
+            query_vector (List[float]): The target semantic embedding vector representing the search query.
+            limit (int): The maximum number of relevant profiles to return. Defaults to 10.
+
+        Returns:
+            List[VoiceProfile]: A list of VoiceProfile objects sorted by semantic similarity in descending order.
+        """
+        import numpy as np
+
+        results = []
+        q_vec = np.array(query_vector)
+        q_norm = np.linalg.norm(q_vec)
+
+        if q_norm == 0:
+            return []
+
+        for data in self.master_data.values():
+            profile = VoiceProfile(**data)
+            if not profile.semantic_embedding:
+                continue
+
+            t_vec = np.array(profile.semantic_embedding)
+            t_norm = np.linalg.norm(t_vec)
+
+            if t_norm == 0:
+                continue
+
+            similarity = np.dot(q_vec, t_vec) / (q_norm * t_norm)
+            results.append((similarity, profile))
+
+        results.sort(key=lambda x: x[0], reverse=True)
+        return [r[1] for r in results[:limit]]
+
+    def search_identity(self, query_vector: List[float], limit: int = 10) -> List[VoiceProfile]:
+        """
+        Performs an acoustic similarity search against the stored voice profiles using cosine similarity.
+
+        This method compares the provided speaker identity vector with the stored identity
+        embeddings of all profiles. It identifies voices that share similar acoustic
+        characteristics, such as timbre and prosody, and returns the top matches.
+
+        Args:
+            query_vector (List[float]): The target speaker embedding vector extracted from an audio reference.
+            limit (int): The maximum number of similar profiles to return. Defaults to 10.
+
+        Returns:
+            List[VoiceProfile]: A list of VoiceProfile objects sorted by acoustic similarity in descending order.
+        """
+        import numpy as np
+
+        results = []
+        q_vec = np.array(query_vector)
+        q_norm = np.linalg.norm(q_vec)
+
+        if q_norm == 0:
+            return []
+
+        for data in self.master_data.values():
+            profile = VoiceProfile(**data)
+            
+            t_vec = np.array(profile.identity_embedding)
+            t_norm = np.linalg.norm(t_vec)
+
+            if t_norm == 0:
+                continue
+
+            similarity = np.dot(q_vec, t_vec) / (q_norm * t_norm)
+            results.append((similarity, profile))
+
+        results.sort(key=lambda x: x[0], reverse=True)
+        return [r[1] for r in results[:limit]]

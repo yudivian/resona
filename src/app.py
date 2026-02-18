@@ -9,6 +9,7 @@ from src.config import settings
 from src.ui.session import SessionManager
 from src.ui.components import init_page, render_debug_panel, render_studio
 from src.ui.explorer import render_explorer  
+from src.ui.search import render_search_view
 
 logger = logging.getLogger(__name__)
 if not logger.handlers:
@@ -42,8 +43,7 @@ with tab_library:
     render_explorer(session)
 
 with tab_search:
-    st.header("Semantic Search")
-    st.info("🚧 Semantic search coming in Phase 5...")
+    render_search_view(session)
 
 st.markdown("---")
 st.caption("Resona CAD System - Modular Voice Design Interface")

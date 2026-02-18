@@ -8,7 +8,7 @@ from src.models import SourceType
 logger = logging.getLogger(__name__)
 
 SUPPORTED_LANGUAGES = {
-    "English": "en", "Spanish": "es", "French": "fr", "German": "de",
+    "Spanish": "es", "English": "en",  "French": "fr", "German": "de",
     "Italian": "it", "Portuguese": "pt", "Chinese": "zh", "Japanese": "ja",
     "Korean": "ko", "Russian": "ru"
 }
@@ -341,72 +341,74 @@ def _render_track_config(session: SessionManager, track_id: str):
     previously in 'Library' mode but the library is now empty, it automatically 
     reverts the state to 'Design' to prevent UI crashes.
     """
-    st.markdown(f"### 🎚️ Track {track_id}")
-    mode_key = f"mode_{track_id}"
+    st.markdown(f"##### 🎚️ Track {track_id}")
     
-    voices = session.list_library_voices()
-    
-    options = [SourceType.DESIGN.value, SourceType.CLONE.value]
-    if voices:
-        options.append("library")
-    
-    current_mode = st.session_state.get(mode_key, SourceType.DESIGN.value)
-    
-    if current_mode == "library" and not voices:
-        current_mode = SourceType.DESIGN.value
-        st.session_state[mode_key] = current_mode
+    with st.container(border=True):
+        mode_key = f"mode_{track_id}"
+        
+        voices = session.list_library_voices()
+        
+        options = [SourceType.DESIGN.value, SourceType.CLONE.value]
+        if voices:
+            options.append("library")
+        
+        current_mode = st.session_state.get(mode_key, SourceType.DESIGN.value)
+        
+        if current_mode == "library" and not voices:
+            current_mode = SourceType.DESIGN.value
+            st.session_state[mode_key] = current_mode
 
-    st.selectbox(
-        f"Source ({track_id})", 
-        options, 
-        key=mode_key, 
-        format_func=lambda x: x.upper(), 
-        on_change=_mark_track_dirty, 
-        args=(track_id,)
-    )
-    
-    if current_mode == SourceType.DESIGN.value:
-        col_text, col_btn = st.columns([0.85, 0.15])
-        with col_text:
-            st.text_area("Prompt", key=f"p_{track_id}", height=100, on_change=_mark_track_dirty, args=(track_id,))
-        with col_btn:
-            st.markdown("<br><br>", unsafe_allow_html=True)
-            if st.button("🎲", key=f"reroll_{track_id}", help="New Variation (Change Seed)"):
-                st.session_state[f"seed_{track_id}"] = random.randint(0, 999999)
-                _mark_track_dirty(track_id)
-                st.toast(f"New seed set for Track {track_id}")
-
-    elif current_mode == SourceType.CLONE.value:
-        m = st.radio(f"Input ({track_id})", ["Upload", "Mic"], key=f"m_{track_id}", horizontal=True, on_change=_mark_track_dirty, args=(track_id,))
-        if m == "Upload":
-            st.file_uploader("Audio", type=["wav", "mp3"], key=f"up_{track_id}", on_change=_mark_track_dirty, args=(track_id,))
-        else:
-            st.audio_input("Record", key=f"mic_{track_id}", on_change=_mark_track_dirty, args=(track_id,))
-        st.text_area("Transcript", key=f"ref_{track_id}", height=80, on_change=_mark_track_dirty, args=(track_id,))
-
-    elif current_mode == "library":
         st.selectbox(
-            "Select Voice", 
-            list(voices.keys()) if voices else [], 
-            key=f"lib_{track_id}", 
+            f"Source ({track_id})", 
+            options, 
+            key=mode_key, 
+            format_func=lambda x: x.upper(), 
             on_change=_mark_track_dirty, 
             args=(track_id,)
         )
-    
-    st.caption(f"🔊 Preview Track {track_id}")
-    phrase = st.text_input("Test Phrase", value="Testing voice.", key=f"preview_txt_{track_id}")
-    
-    if st.button(f"Play {track_id}", key=f"btn_{track_id}", use_container_width=True):
-        if phrase:
-            _dialog_preview_execution(session, track_id, phrase)
-        else:
-            st.warning("Please enter a test phrase.")
+        
+        if current_mode == SourceType.DESIGN.value:
+            col_text, col_btn = st.columns([0.85, 0.15])
+            with col_text:
+                st.text_area("Prompt", key=f"p_{track_id}", height=100, on_change=_mark_track_dirty, args=(track_id,))
+            with col_btn:
+                st.markdown("<br><br>", unsafe_allow_html=True)
+                if st.button("🎲", key=f"reroll_{track_id}", help="New Variation (Change Seed)"):
+                    st.session_state[f"seed_{track_id}"] = random.randint(0, 999999)
+                    _mark_track_dirty(track_id)
+                    st.toast(f"New seed set for Track {track_id}")
 
-    last_audio_key = f"last_audio_{track_id}"
-    if last_audio_key in st.session_state:
-        st.audio(st.session_state[last_audio_key])
+        elif current_mode == SourceType.CLONE.value:
+            m = st.radio(f"Input ({track_id})", ["Upload", "Mic"], key=f"m_{track_id}", horizontal=True, on_change=_mark_track_dirty, args=(track_id,))
+            if m == "Upload":
+                st.file_uploader("Audio", type=["wav", "mp3"], key=f"up_{track_id}", on_change=_mark_track_dirty, args=(track_id,))
+            else:
+                st.audio_input("Record", key=f"mic_{track_id}", on_change=_mark_track_dirty, args=(track_id,))
+            st.text_area("Transcript", key=f"ref_{track_id}", height=80, on_change=_mark_track_dirty, args=(track_id,))
 
-    st.markdown("---")
+        elif current_mode == "library":
+            st.selectbox(
+                "Select Voice", 
+                list(voices.keys()) if voices else [], 
+                key=f"lib_{track_id}", 
+                on_change=_mark_track_dirty, 
+                args=(track_id,)
+            )
+        
+        st.caption(f"🔊 Preview Track {track_id}")
+        phrase = st.text_input("Test Phrase", value="Testing voice.", key=f"preview_txt_{track_id}")
+        
+        if st.button(f"Play {track_id}", key=f"btn_{track_id}", use_container_width=True):
+            if phrase:
+                _dialog_preview_execution(session, track_id, phrase)
+            else:
+                st.warning("Please enter a test phrase.")
+
+        last_audio_key = f"last_audio_{track_id}"
+        if last_audio_key in st.session_state:
+            st.audio(st.session_state[last_audio_key])
+
+
 
 def render_studio(session: SessionManager):
     """
@@ -417,24 +419,25 @@ def render_studio(session: SessionManager):
     It checks the session state for persistent results (final audio) and renders
     the player if available.
     """
-    st.subheader("🌍 Project Settings")
     lang_name = st.selectbox("Language", list(SUPPORTED_LANGUAGES.keys()), key="project_lang")
     session.set_language(SUPPORTED_LANGUAGES[lang_name])
     st.markdown("---")
     
     _render_track_config(session, "A")
     
+    st.markdown("---")
     is_mix = st.checkbox("🔗 Mix with Track B", value=False, key="mix_checkbox")
     alpha = 0.5
     if is_mix:
         _render_track_config(session, "B")
-        st.markdown("### 🎛️ Blending")
+        st.markdown("##### 🎛️ Blending")
         alpha = st.slider("Mix Balance", 0.0, 1.0, 0.5, 0.1, key="blend_slider")
-
-    st.markdown("### 🗣️ Final Generation")
-    final_text = st.text_area("Final Text", height=150, key="tts_final")
+    st.markdown("---")
     
-    if st.button("🚀 Generate Final Audio", type="primary", use_container_width=True):
+    st.markdown("##### 🗣️ Final Audio Synthesis Test")
+    final_text = st.text_area("Synthesis Text", height=150, key="tts_final")
+    
+    if st.button("🚀 Generate Audio", type="primary", use_container_width=True):
         if final_text:
             _dialog_final_execution(session, final_text, is_mix, alpha)
         else:

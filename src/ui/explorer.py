@@ -45,7 +45,6 @@ def render_explorer(session: SessionManager):
     Args:
         session (SessionManager): The active session orchestrator.
     """
-    st.header("📚 Voice Library")
     
     all_voices = session.store.get_all()
     available_langs = sorted(list({v.language for v in all_voices if v.language}))
@@ -156,7 +155,6 @@ def _render_card_layout(session: SessionManager, voice: VoiceProfile):
 
             st.markdown("---")
 
-            # --- Section 1: Anchor Audio ---
             st.markdown("**Anchor audio test:**")
             c_audio, c_dl = st.columns([0.85, 0.15])
             
@@ -187,7 +185,6 @@ def _render_card_layout(session: SessionManager, voice: VoiceProfile):
 
             st.markdown("") 
 
-            # --- Section 2: Synthesis Test ---
             st.markdown("**Audio synthesis test:**")
             c_input, c_play = st.columns([0.85, 0.15])
             
@@ -207,7 +204,6 @@ def _render_card_layout(session: SessionManager, voice: VoiceProfile):
 
             st.markdown("---")
 
-            # --- Section 3: Management ---
             b_edit, b_export, b_del = st.columns(3)
             
             with b_edit:
@@ -253,7 +249,6 @@ def _dialog_edit_voice(session: SessionManager, voice: VoiceProfile):
         try:
             clean_tags = [t.strip() for t in new_tags_str.split(",") if t.strip()]
             
-            # Requires session.update_voice_metadata to be implemented in SessionManager
             session.update_voice_metadata(
                 voice_id=voice.id,
                 new_name=new_name,

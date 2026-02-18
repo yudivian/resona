@@ -159,15 +159,12 @@ class SessionManager:
 
         engine = self.engine_a if track_id == "A" else self.engine_b
         
-        # We use the engine's internal method to transform the stored List[float] 
-        # back into a VoiceClonePromptItem, passing all required metadata.
         engine.load_identity_from_state(
             vector=profile.identity_embedding,
             seed=profile.seed,
             anchor_path=profile.anchor_audio_path
         )
         
-        # IMPORTANT: Maintaining your original logic for TrackType tracking
         if track_id == "A":
             self.track_a_type = TrackType.PREEXISTING
         else:
@@ -203,7 +200,6 @@ class SessionManager:
         elif blend_alpha == 1.0:
             target_engine = self.engine_b
         else:
-            # Just-In-Time Blending Logic
             if self._cached_blend_engine is None or abs(self._last_blend_alpha - blend_alpha) > 0.001:
                 self._cached_blend_engine = VoiceBlender.blend(self.engine_a, self.engine_b, blend_alpha)
                 self._last_blend_alpha = blend_alpha
@@ -243,34 +239,27 @@ class SessionManager:
         alpha = metadata.get("blend")
         engine_to_save = None
         
-        # Determine the source engine based on the blend factor
         if alpha is not None and 0.0 < float(alpha) < 1.0:
             current_alpha = float(alpha)
-            # Re-blend if necessary to ensure the cached engine matches the requested alpha
             if self._cached_blend_engine is None or abs(self._last_blend_alpha - current_alpha) > 0.001:
                 self._cached_blend_engine = VoiceBlender.blend(self.engine_a, self.engine_b, current_alpha)
                 self._last_blend_alpha = current_alpha
             engine_to_save = self._cached_blend_engine
         else:
-            # Select the appropriate single engine (Track A or Track B)
             engine_to_save = self.engine_b if (alpha is not None and float(alpha) == 1.0) else self.engine_a
 
         if not engine_to_save or not engine_to_save.active_identity:
             raise ValueError("Save failed: No active identity detected in the target engine.")
 
-        # Extract design prompts from metadata to persist them in the database
         source_prompts = {}
         if "design_prompt_A" in metadata:
             source_prompts["A"] = metadata["design_prompt_A"]
         if "design_prompt_B" in metadata:
             source_prompts["B"] = metadata["design_prompt_B"]
             
-        # Concatenate prompts for the semantic index
         prompt_context_list = [f"Track {k}: {v}" for k, v in source_prompts.items()]
         combined_prompt_text = " | ".join(prompt_context_list)
 
-        # Generate the semantic vector using the centralized helper
-        # This ensures the embedding includes Name, Language, Tags, Description, and Prompts
         semantic_text = self._build_semantic_context(
             name=name,
             lang=engine_to_save.lang,
@@ -280,8 +269,6 @@ class SessionManager:
         )
         semantic_vector = self.embed_engine.generate_embedding(semantic_text)
 
-        # Create the VoiceProfile object
-        # We explicitly populate 'source_prompts' so the original text is saved to the DB
         profile = VoiceProfile(
             id=str(uuid.uuid4()),
             name=name,
@@ -292,14 +279,12 @@ class SessionManager:
             language=engine_to_save.lang,
             source_type=metadata.get("source_type", SourceType.DESIGN),
             tags=tags,
-            source_prompts=source_prompts, # Persist the raw prompts
-            refinement_prompt=combined_prompt_text # Store combined text for quick reference
-        )
+            source_prompts=source_prompts, 
+            refinement_prompt=combined_prompt_text
+        ) 
         
-        # Persist to the store
         self.store.add_profile(profile, anchor_source_path=engine_to_save.last_anchor_path)
         
-        # Clean up temporary resources
         self.reset_workflow()  
   
     def reset_workflow(self):
@@ -360,7 +345,6 @@ class SessionManager:
         if not profile:
             raise ValueError(f"Voice profile {voice_id} not found.")
 
-        # Resolve the absolute path of the anchor audio
         anchor_path = os.path.join(self.config.paths.assets_dir, profile.anchor_audio_path)
         if not os.path.exists(anchor_path):
             raise FileNotFoundError(f"Anchor audio file missing at {anchor_path}")
@@ -385,18 +369,15 @@ class SessionManager:
         
         profile_dict, identity_vector, anchor_bytes = VoiceBundleIO.unpack_bundle(bundle_bytes)
         
-        # Reconstruct the profile to ensure validation
         profile = VoiceProfile(**profile_dict)
         profile.identity_embedding = identity_vector
         
-        # Save the audio file to the assets directory
         target_path = os.path.join(self.config.paths.assets_dir, profile.anchor_audio_path)
         os.makedirs(os.path.dirname(target_path), exist_ok=True)
         
         with open(target_path, "wb") as f:
             f.write(anchor_bytes)
             
-        # Persist the profile in the store (BeaverDB)
         self.store.add_profile(profile)
         logger.info(f"Imported voice bundle: {profile.name} ({profile.id})")
 
@@ -407,11 +388,9 @@ class SessionManager:
         If the deleted voice is currently loaded in any inference engine, 
         the engine state is cleared to maintain system integrity.
         """
-        # 1. Physical and DB deletion
+
         self.store.delete_profile(voice_id)
         
-        # 2. State synchronization: Clear engines if they were using this voice
-        # We perform a full engine reset if there's a risk of stale identities
         self._reset_engine_states()
         logger.info(f"Deleted voice {voice_id} and synchronized engine states.")
         
@@ -493,3 +472,26 @@ class SessionManager:
             components.append(f"Origin Context: {safe_prompt}")
             
         return ". ".join(components)
+    
+    def search_by_text(self, query: str, limit: int = 20) -> List[VoiceProfile]:
+        """
+        Executes a semantic search against the voice library using a natural language query.
+
+        This method converts the user's text description into a semantic vector
+        using the embedding engine and queries the storage layer for conceptually
+        similar voice profiles.
+
+        Args:
+            query (str): The search text describing the desired voice.
+            limit (int): The maximum number of results to return.
+
+        Returns:
+            List[VoiceProfile]: A list of matching profiles sorted by relevance.
+        """
+        if not query or not query.strip():
+            return []
+
+        vector = self.embed_engine.generate_embedding(query)
+        return self.store.search_semantic(vector, limit)
+    
+    

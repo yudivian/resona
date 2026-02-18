@@ -31,21 +31,17 @@ class VoiceBundleIO:
         buffer = io.BytesIO()
         
         profile_data = profile.model_dump()
-        # Ensure semantic embedding is excluded if present to keep bundles portable and focused on identity
         if "semantic_embedding" in profile_data:
             profile_data["semantic_embedding"] = None
 
         with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
-            # 1. Add Profile Metadata
             zf.writestr("profile.json", json.dumps(profile_data, indent=4))
             
-            # 2. Add Identity Vector (Compressed NPY)
             vector_array = np.array(identity_vector, dtype=np.float32)
             vector_buffer = io.BytesIO()
             np.save(vector_buffer, vector_array)
             zf.writestr("identity.npy", vector_buffer.getvalue())
             
-            # 3. Add Anchor Audio
             zf.writestr("anchor.wav", anchor_audio_bytes)
             
         return buffer.getvalue()
@@ -78,15 +74,12 @@ class VoiceBundleIO:
                 if f not in zf.namelist():
                     raise ValueError(f"Corrupted bundle: Missing {f}")
 
-            # 1. Extract Profile
             profile_dict = json.loads(zf.read("profile.json"))
             
-            # 2. Extract Identity Vector
             vector_buffer = io.BytesIO(zf.read("identity.npy"))
             vector_array = np.load(vector_buffer)
             identity_vector = vector_array.tolist()
             
-            # 3. Extract Anchor Audio
             anchor_audio_bytes = zf.read("anchor.wav")
 
         return profile_dict, identity_vector, anchor_audio_bytes

@@ -21,5 +21,4 @@ class ResonaConfig:
         
         return cls._instance
 
-# Global accessor
 settings = ResonaConfig.load()

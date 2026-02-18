@@ -337,6 +337,7 @@ class InferenceEngine:
             raise ValueError("No active identity vector.")
         return self.active_identity.ref_spk_embedding.squeeze().cpu().tolist()
 
+
 class VoiceBlender:
     """
     Handles interpolation and blending between two InferenceEngines.

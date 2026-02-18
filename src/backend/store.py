@@ -129,11 +129,11 @@ class VoiceStore:
                     logger.error(f"Failed to delete physical asset {file_path}: {e}")
 
         self.master_data.pop(profile_id, None)
-
+        del_doc = Document(id=profile_id)
         try:
-            self.identity_index.drop(profile_id)
+            self.identity_index.drop(del_doc)
             if profile.semantic_embedding:
-                self.semantic_index.drop(profile_id)
+                self.semantic_index.drop(del_doc)
         except Exception as e:
             logger.error(f"Error dropping vectors for {profile_id} in BeaverDB: {e}")
 

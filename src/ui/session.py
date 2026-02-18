@@ -5,9 +5,11 @@ import shutil
 import gc
 from typing import Optional, List, Dict, Any
 from src.models import AppConfig, VoiceProfile, SourceType, TrackType
-from src.backend.engine import TTSModelProvider, InferenceEngine, VoiceBlender
+from src.backend.engine import TTSModelProvider, InferenceEngine, VoiceBlender, CALIBRATION_TEXTS
 from src.backend.embedding import EmbeddingModelProvider, EmbeddingEngine
 from src.backend.store import VoiceStore
+from src.backend.io import VoiceBundleIO
+
 
 logger = logging.getLogger(__name__)
 
@@ -268,7 +270,7 @@ class SessionManager:
             prompt_context=combined_prompt_text
         )
         semantic_vector = self.embed_engine.generate_embedding(semantic_text)
-
+        
         profile = VoiceProfile(
             id=str(uuid.uuid4()),
             name=name,
@@ -280,7 +282,8 @@ class SessionManager:
             source_type=metadata.get("source_type", SourceType.DESIGN),
             tags=tags,
             source_prompts=source_prompts, 
-            refinement_prompt=combined_prompt_text
+            refinement_prompt=combined_prompt_text,
+            anchor_text = CALIBRATION_TEXTS.get(engine_to_save.lang, CALIBRATION_TEXTS["en"])
         ) 
         
         self.store.add_profile(profile, anchor_source_path=engine_to_save.last_anchor_path)
@@ -338,9 +341,7 @@ class SessionManager:
         
         It fetches the profile from the store, locates the physical anchor audio file,
         and uses the VoiceBundleIO service to generate a portable binary package.
-        """
-        from src.backend.io import VoiceBundleIO
-        
+        """        
         profile = self.store.get_profile(voice_id)
         if not profile:
             raise ValueError(f"Voice profile {voice_id} not found.")
@@ -364,22 +365,42 @@ class SessionManager:
         
         It extracts the metadata and audio, persists the audio file into the 
         assets directory, and registers the profile in BeaverDB.
-        """
-        from src.backend.io import VoiceBundleIO
-        
-        profile_dict, identity_vector, anchor_bytes = VoiceBundleIO.unpack_bundle(bundle_bytes)
-        
+        """        
+        profile_dict, _, anchor_bytes = VoiceBundleIO.unpack_bundle(bundle_bytes)
         profile = VoiceProfile(**profile_dict)
-        profile.identity_embedding = identity_vector
         
         target_path = os.path.join(self.config.paths.assets_dir, profile.anchor_audio_path)
         os.makedirs(os.path.dirname(target_path), exist_ok=True)
-        
         with open(target_path, "wb") as f:
             f.write(anchor_bytes)
+        
+        prompt_context_list = [f"Track {k}: {v}" for k, v in profile.source_prompts.items()]
+        combined_prompt = " | ".join(prompt_context_list)
+        
+        semantic_text = self._build_semantic_context(
+            name=profile.name,
+            lang=profile.language,
+            tags=profile.tags,
+            desc=profile.description,
+            prompt_context=combined_prompt
+        )
+        profile.semantic_embedding = self.embed_engine.generate_embedding(semantic_text)
+        
+        try:
+            transcript = profile.anchor_text or "" 
             
+            self.engine_a.extract_identity(target_path, transcript)
+            
+            if self.engine_a.active_identity:
+                profile.identity_embedding = self.engine_a.get_identity_vector()
+                
+                self.engine_a.active_identity = None 
+        except Exception as e:
+            logger.error(f"Error re-indexing acoustic vector during import: {e}")
+            profile.identity_embedding = profile_dict.get("identity_embedding")
+
         self.store.add_profile(profile)
-        logger.info(f"Imported voice bundle: {profile.name} ({profile.id})")
+        logger.info(f"Imported and re-indexed voice: {profile.name}")
 
     def delete_voice(self, voice_id: str):
         """

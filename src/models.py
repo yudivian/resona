@@ -91,5 +91,6 @@ class VoiceProfile(BaseModel):
     tags: List[str] = Field(default_factory=list)
 
     anchor_audio_path: Optional[str] = None
+    anchor_text: Optional[str] = None
     
     parameters: Dict[str, Any] = Field(default_factory=dict)

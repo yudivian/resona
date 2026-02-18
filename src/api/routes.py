@@ -1,0 +1,323 @@
+import os
+import io
+import logging
+from typing import List, Optional, Any
+from fastapi import APIRouter, HTTPException, Query, Depends
+from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
+
+from src.models import (
+    VoiceSummary, 
+    VoiceDetail, 
+    VoiceEndpoints
+)
+from src.backend.store import VoiceStore
+from src.backend.io import VoiceBundleIO
+from src.api.dependencies import get_store, get_embed_engine, get_config
+
+logger = logging.getLogger(__name__)
+router = APIRouter()
+
+# --- DISCOVERY & SEARCH ENDPOINTS ---
+
+@router.get("/voices", response_model=List[VoiceSummary])
+def list_voices(
+    lang: Optional[str] = None,
+    tag: Optional[str] = None,
+    source_type: Optional[str] = None,
+    limit: int = Query(50, ge=1, le=100, description="Max records to retrieve per page"),
+    offset: int = Query(0, ge=0, description="Number of records to skip"),
+    store: VoiceStore = Depends(get_store)
+):
+    """
+    Retrieves a paginated, filtered catalog of voice profiles from the persistence layer.
+
+    Architectural Note:
+    This endpoint acts as the primary data feed for UI lists and external integrations.
+    Unlike the detail endpoint, it strictly returns 'VoiceSummary' objects. This DTO pattern
+    strips away heavy data (like vectors or long prompts) to minimize network latency 
+    and serialization overhead during bulk retrieval.
+
+    Filtering Strategy:
+    Filtering is currently applied in-memory after fetching profiles from the store. 
+    While this is performant for datasets up to ~10k records (typical for this domain),
+    future iterations might push these predicates down to the database query layer 
+    if the dataset grows significantly.
+
+    Args:
+        lang (Optional[str]): ISO language code filter (e.g., 'es'). Exact match.
+        tag (Optional[str]): Semantic tag filter. Case-insensitive containment check.
+        source_type (Optional[str]): Origin filter ('common', 'design', 'cloned').
+        limit (int): Pagination limit to control response payload size.
+        offset (int): Pagination offset for infinite scrolling implementations.
+        store (VoiceStore): Injected singleton of the persistence controller.
+
+    Returns:
+        List[VoiceSummary]: An ordered list of lightweight voice representations, 
+        sorted by creation date (newest first).
+    """
+    all_profiles = store.get_all()
+    filtered_profiles = []
+
+    for profile in all_profiles:
+        if lang and profile.language.lower() != lang.lower():
+            continue
+        
+        if tag:
+            profile_tags = [t.lower() for t in profile.tags]
+            if tag.lower() not in profile_tags:
+                continue
+            
+        # FIX: We cast to string to handle cases where source_type comes as a raw string 
+        # from the DB or as an Enum object. This prevents AttributeError on .value access.
+        if source_type and str(profile.source_type) != source_type:
+            continue
+            
+        filtered_profiles.append(profile)
+
+    filtered_profiles.sort(key=lambda x: x.created_at, reverse=True)
+    
+    paginated_profiles = filtered_profiles[offset : offset + limit]
+
+    return [
+        VoiceSummary(
+            id=p.id,
+            name=p.name,
+            language=p.language,
+            tags=p.tags,
+            source_type=p.source_type, # Pydantic handles Enum->str serialization automatically
+            created_at=p.created_at,
+            description=p.description,
+            preview_url=f"/v1/voices/{p.id}/audio"
+        ) for p in paginated_profiles
+    ]
+
+@router.get("/search", response_model=List[VoiceSummary])
+def search_voices(
+    q: str = Query(..., min_length=2, description="Natural language search query"),
+    limit: int = Query(10, ge=1, le=50, description="Max relevant results"),
+    store: VoiceStore = Depends(get_store),
+    embed_engine: Any = Depends(get_embed_engine) 
+):
+    """
+    Performs a semantic similarity search using high-dimensional vector embeddings.
+
+    Mechanism:
+    1. The user's text query is passed to the injected Embedding Engine (Transformer model).
+    2. The engine generates a dense vector representation of the query intent.
+    3. This vector is compared against the pre-indexed 'semantic_embedding' of all voices
+       using Cosine Similarity.
+    
+    Dependency Note:
+    This endpoint triggers the 'Lazy Loading' of the ML engine if it hasn't been used yet.
+    This design decision offloads the heavy memory cost of PyTorch/ONNX to the first 
+    actual search request, rather than slowing down the API startup.
+
+    Args:
+        q (str): The search text (e.g., "A deep, scary narrator for a horror movie").
+        limit (int): Cap on the number of results to ensure relevance.
+        store (VoiceStore): Injected persistence layer.
+        embed_engine (Any): Injected ML inference engine wrapper.
+
+    Returns:
+        List[VoiceSummary]: Voices ranked by their semantic proximity to the query.
+
+    Raises:
+        HTTPException(503): If the Embedding Engine fails to initialize (e.g., missing weights).
+        HTTPException(500): If the vector inference process crashes.
+    """
+    if not embed_engine:
+        logger.error("Semantic search requested but the Embedding Engine is not available.")
+        raise HTTPException(status_code=503, detail="Search service unavailable due to initialization failure.")
+
+    try:
+        query_vector = embed_engine.generate_embedding(q)
+    except Exception as e:
+        logger.error(f"Vector generation failed for query '{q}': {e}")
+        raise HTTPException(status_code=500, detail="Failed to process search query.")
+
+    results = store.search_semantic(query_vector, limit=limit)
+
+    return [
+        VoiceSummary(
+            id=p.id,
+            name=p.name,
+            language=p.language,
+            tags=p.tags,
+            source_type=p.source_type,
+            created_at=p.created_at,
+            description=p.description,
+            preview_url=f"/v1/voices/{p.id}/audio"
+        ) for p in results
+    ]
+
+@router.get("/voices/{voice_id}", response_model=VoiceDetail)
+def get_voice_detail(
+    voice_id: str, 
+    store: VoiceStore = Depends(get_store)
+):
+    """
+    Retrieves the complete technical specification for a single voice profile.
+
+    This endpoint acts as the Single Source of Truth (SSOT) for consuming a voice.
+    Unlike the summary endpoints, it exposes the 'anchor_text' (critical for 
+    In-Context Learning/Cloning) and the specific generation parameters used 
+    to create the voice.
+
+    HATEOAS Implementation:
+    The response includes an 'endpoints' object providing pre-constructed URLs 
+    to binary assets (audio, bundle, text). This decouples the client from knowing 
+    the API's internal URL routing structure, allowing backend refactors without 
+    breaking client implementations.
+
+    Args:
+        voice_id (str): UUID of the target voice.
+        store (VoiceStore): Injected persistence layer.
+
+    Returns:
+        VoiceDetail: Full metadata profile + Asset Discovery Links.
+
+    Raises:
+        HTTPException(404): If the voice ID does not exist in the index.
+    """
+    profile = store.get_profile(voice_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail=f"Voice {voice_id} not found")
+
+    return VoiceDetail(
+        id=profile.id,
+        name=profile.name,
+        description=profile.description,
+        anchor_text=profile.anchor_text,
+        language=profile.language,
+        tags=profile.tags,
+        source_type=profile.source_type,
+        created_at=profile.created_at,
+        params=profile.parameters,
+        endpoints=VoiceEndpoints(
+            audio=f"/v1/voices/{profile.id}/audio",
+            bundle=f"/v1/voices/{profile.id}/bundle",
+            text=f"/v1/voices/{profile.id}/text"
+        )
+    )
+
+# --- ASSET DELIVERY ENDPOINTS ---
+
+@router.get("/voices/{voice_id}/audio")
+def get_voice_audio(
+    voice_id: str, 
+    store: VoiceStore = Depends(get_store),
+    config = Depends(get_config)
+):
+    """
+    Streams the raw audio reference file (Anchor) for a specific voice.
+
+    Security & Resolution:
+    This endpoint resolves the logical 'voice_id' to a physical file path stored 
+    in the secured assets directory. It validates that the file actually exists 
+    on the disk to prevent 500 errors during streaming. This abstraction prevents 
+    Path Traversal attacks by not accepting file paths directly from the user.
+
+    MIME Type:
+    Served as 'audio/wav'. This allows direct playback in HTML5 <audio> tags 
+    and seamless integration with TTS inference engines that require WAV input.
+
+    Args:
+        voice_id (str): UUID of the target voice.
+        store (VoiceStore): Injected persistence layer.
+        config (AppConfig): Configuration object for resolving the assets root path.
+
+    Returns:
+        FileResponse: Binary stream of the audio file.
+    """
+    profile = store.get_profile(voice_id)
+    if not profile or not profile.anchor_audio_path:
+        raise HTTPException(status_code=404, detail="Audio asset path is undefined.")
+
+    file_path = os.path.join(config.paths.assets_dir, profile.anchor_audio_path)
+    
+    if not os.path.exists(file_path):
+        logger.error(f"Data Integrity Error: File for voice {voice_id} missing at {file_path}")
+        raise HTTPException(status_code=404, detail="Physical audio file missing on server.")
+
+    return FileResponse(file_path, media_type="audio/wav")
+
+@router.get("/voices/{voice_id}/text")
+def get_voice_text(
+    voice_id: str, 
+    store: VoiceStore = Depends(get_store)
+):
+    """
+    Retrieves the canonical reference text for the voice.
+
+    Why JSON?
+    Returning raw text can lead to encoding issues or ambiguity with line breaks 
+    in some HTTP clients. Wrapping the text in a JSON object `{"text": "..."}` 
+    ensures strict UTF-8 compliance and makes it easier for frontend clients 
+    to parse and bind the data to UI components.
+
+    Args:
+        voice_id (str): UUID of the target voice.
+        store (VoiceStore): Injected persistence layer.
+
+    Returns:
+        JSONResponse: Object containing the anchor text.
+    """
+    profile = store.get_profile(voice_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Voice not found")
+        
+    return JSONResponse(content={"text": profile.anchor_text})
+
+@router.get("/voices/{voice_id}/bundle")
+def download_voice_bundle(
+    voice_id: str, 
+    store: VoiceStore = Depends(get_store),
+    config = Depends(get_config)
+):
+    """
+    Dynamically packs and streams a portable Voice Bundle (.rnb).
+
+    Operation:
+    This is a compute-bound operation that:
+    1. Fetches the latest metadata from the DB.
+    2. Reads the physical audio file from disk.
+    3. Serializes both into a ZIP archive structure in memory.
+    
+    Use Case:
+    Essential for migrating voices between Resona instances (e.g., Dev -> Prod)
+    or creating backups. By generating the bundle on-the-fly, we guarantee 
+    that the export always represents the exact current state of the voice, 
+    including any recent metadata edits.
+
+    Args:
+        voice_id (str): UUID of the target voice.
+        store (VoiceStore): Injected persistence layer.
+        config (AppConfig): Configuration object for resolving paths.
+
+    Returns:
+        StreamingResponse: Downloadable ZIP stream with proper Content-Disposition headers.
+    """
+    profile = store.get_profile(voice_id)
+    if not profile or not profile.anchor_audio_path:
+        raise HTTPException(status_code=404, detail="Voice asset invalid.")
+
+    file_path = os.path.join(config.paths.assets_dir, profile.anchor_audio_path)
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Source audio file missing.")
+
+    try:
+        with open(file_path, "rb") as f:
+            audio_bytes = f.read()
+
+        bundle_bytes = VoiceBundleIO.pack_bundle(profile.model_dump(), audio_bytes)
+        
+        safe_filename = f"{profile.name.replace(' ', '_')}_{voice_id[:6]}.rnb"
+
+        return StreamingResponse(
+            io.BytesIO(bundle_bytes),
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{safe_filename}"'}
+        )
+    except Exception as e:
+        logger.error(f"Bundle generation failed for {voice_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to generate voice bundle.")

@@ -94,3 +94,30 @@ class VoiceProfile(BaseModel):
     anchor_text: Optional[str] = None
     
     parameters: Dict[str, Any] = Field(default_factory=dict)
+    
+class VoiceEndpoints(BaseModel):
+    audio: str
+    bundle: str
+    text: str
+class VoiceSummary(BaseModel):
+    id: str
+    name: str
+    language: str
+    tags: List[str]
+    source_type: str
+    created_at: float
+    description: Optional[str] = None
+    preview_url: str 
+    score: Optional[float] = None
+
+class VoiceDetail(BaseModel):
+    id: str
+    name: str
+    description: Optional[str]
+    anchor_text: Optional[str]
+    language: str
+    tags: List[str]
+    source_type: str
+    created_at: float
+    params: Dict[str, Any]
+    endpoints: VoiceEndpoints

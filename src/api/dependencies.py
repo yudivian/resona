@@ -1,0 +1,75 @@
+import logging
+from functools import lru_cache
+from typing import Optional, Any
+
+from src.config import settings, AppConfig
+from src.backend.store import VoiceStore
+
+logger = logging.getLogger(__name__)
+
+@lru_cache()
+def get_config() -> AppConfig:
+    """
+    Retrieves the global application configuration as a singleton.
+
+    This function uses lru_cache to ensure the configuration object is loaded 
+    and parsed only once during the application lifecycle, preventing redundant 
+    I/O operations.
+
+    Returns:
+        AppConfig: The validated application settings object.
+    """
+    return settings
+
+@lru_cache()
+def get_store() -> VoiceStore:
+    """
+    Provides a singleton instance of the VoiceStore (Database connection).
+
+    The VoiceStore is initialized with the global settings. Since BeaverDB 
+    handles connections efficiently, this initialization is lightweight 
+    and safe to perform during the API startup phase.
+
+    Returns:
+        VoiceStore: The initialized persistence layer controller.
+    """
+    logger.debug("Initializing VoiceStore connection for API request.")
+    return VoiceStore(settings)
+
+@lru_cache()
+def get_embed_engine() -> Optional[Any]:
+    """
+    Lazily initializes the Embedding Engine (Heavy Machine Learning Model).
+
+    This function implements a 'Lazy Loading' strategy. The heavy ML libraries 
+    (such as PyTorch, ONNX, or FastEmbed) and the model weights are NOT loaded 
+    when the API starts. They are only loaded the first time an endpoint 
+    specifically requests this dependency (e.g., /search).
+
+    This approach drastically reduces the memory footprint and startup time 
+    for users who only need to list or retrieve voices without performing 
+    semantic searches.
+
+    Returns:
+        Optional[Any]: The initialized EmbeddingEngine instance if successful, 
+        or None if the initialization fails due to missing libraries or 
+        hardware constraints. The return type is 'Any' to avoid top-level 
+        imports of the engine class.
+    """
+    try:
+        logger.info("❄️ Cold Start: Loading Embedding Engine (ONNX/Torch)...")
+        
+        from src.backend.embedding import EmbeddingEngine, EmbeddingModelProvider
+        
+        provider = EmbeddingModelProvider(settings)
+        engine = EmbeddingEngine(settings, provider)
+        
+        logger.info("✅ Embedding Engine ready.")
+        return engine
+        
+    except ImportError as e:
+        logger.critical(f"Failed to import embedding backend libraries. Ensure dependencies are installed: {e}")
+        return None
+    except Exception as e:
+        logger.critical(f"Failed to initialize Embedding Model during cold start: {e}")
+        return None

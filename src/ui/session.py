@@ -361,19 +361,66 @@ class SessionManager:
 
     def import_voice(self, bundle_bytes: bytes):
         """
-        Unpacks a Resona Bundle and integrates it into the local store.
+        Imports a serialized voice bundle (.rnb) and integrates it into the local ecosystem.
+
+        This method implements a "Hybrid Trust" strategy to ensure both fidelity to the 
+        original voice and compatibility with the local search environment.
+
+        Architecture Decisions:
+        1.  **Acoustic Trust (Identity):** We blindly accept the `identity_embedding` 
+            contained in the bundle. This is the "DNA" of the voice. Re-calculating it 
+            locally is avoided because:
+            a) It preserves the exact acoustic signature defined by the creator.
+            b) It avoids potential floating-point deviations or model version mismatches.
+            c) It saves significant computational resources (no heavy inference).
+
+        2.  **Semantic Regeneration (Search):** We strictly regenerate the `semantic_embedding`.
+            The vector space for text search depends entirely on the local embedding model 
+            loaded in the current session. Using a vector from a different machine/model 
+            would make the voice "invisible" or incorrectly ranked in text searches.
+
+        3.  **Deterministic Storage (Idempotency):** We ignore the original filename from 
+            the bundle and enforce a naming convention based on the Voice UUID 
+            (`{name}_{uuid}_anchor.wav`). 
+            - If the user imports the same voice twice, it overwrites the existing file 
+              cleanly rather than creating duplicate files with timestamp suffixes.
+            - This ensures 1:1 mapping between a logical voice profile and its physical asset.
+
+        Args:
+            bundle_bytes (bytes): The raw binary content of the .rnb file (zip archive).
+        """
+        from src.backend.io import VoiceBundleIO
         
-        It extracts the metadata and audio, persists the audio file into the 
-        assets directory, and registers the profile in BeaverDB.
-        """        
-        profile_dict, _, anchor_bytes = VoiceBundleIO.unpack_bundle(bundle_bytes)
+        # 1. Unpack the bundle components
+        # We extract the metadata dictionary, the pre-calculated identity vector, and the raw audio bytes.
+        profile_dict, identity_vector, anchor_bytes = VoiceBundleIO.unpack_bundle(bundle_bytes)
+        
+        # 2. Rehydrate the VoiceProfile
+        # We instantiate the model and inject the original acoustic identity immediately.
         profile = VoiceProfile(**profile_dict)
+        profile.identity_embedding = identity_vector
         
-        target_path = os.path.join(self.config.paths.assets_dir, profile.anchor_audio_path)
+        # 3. Deterministic Asset Storage
+        # We construct a filename using the UUID to guarantee uniqueness and idempotency.
+        safe_name = profile.name.replace(' ', '_').lower()
+        new_filename = f"{safe_name}_{profile.id}_anchor.wav"
+        
+        target_path = os.path.join(self.config.paths.assets_dir, new_filename)
+        
+        # Ensure the assets directory exists
         os.makedirs(os.path.dirname(target_path), exist_ok=True)
+        
+        # Write the audio file directly to disk.
+        # By using 'wb', we overwrite any existing file with the same ID, preventing garbage accumulation.
         with open(target_path, "wb") as f:
             f.write(anchor_bytes)
+            
+        # Update the profile's reference to point to this new local file.
+        profile.anchor_audio_path = new_filename
         
+        # 4. Regenerate Semantic Search Vector
+        # We rebuild the text context (name + description + prompts) and feed it to the 
+        # LOCAL embedding engine to ensure this voice appears correctly in local text searches.
         prompt_context_list = [f"Track {k}: {v}" for k, v in profile.source_prompts.items()]
         combined_prompt = " | ".join(prompt_context_list)
         
@@ -384,23 +431,18 @@ class SessionManager:
             desc=profile.description,
             prompt_context=combined_prompt
         )
-        profile.semantic_embedding = self.embed_engine.generate_embedding(semantic_text)
         
-        try:
-            transcript = profile.anchor_text or "" 
-            
-            self.engine_a.extract_identity(target_path, transcript)
-            
-            if self.engine_a.active_identity:
-                profile.identity_embedding = self.engine_a.get_identity_vector()
-                
-                self.engine_a.active_identity = None 
-        except Exception as e:
-            logger.error(f"Error re-indexing acoustic vector during import: {e}")
-            profile.identity_embedding = profile_dict.get("identity_embedding")
-
+        # Generate the vector if the engine is available (lightweight CPU/GPU operation)
+        if self.embed_engine:
+            profile.semantic_embedding = self.embed_engine.generate_embedding(semantic_text)
+        
+        # 5. Persist to Database
+        # We call add_profile without passing 'anchor_source_path', as we have already 
+        # manually handled the file storage in step 3. The store will only handle indexing.
         self.store.add_profile(profile)
-        logger.info(f"Imported and re-indexed voice: {profile.name}")
+        
+        logger.info(f"Imported voice '{profile.name}' ({profile.id}). Audio preserved, Semantic index regenerated.")
+
 
     def delete_voice(self, voice_id: str):
         """

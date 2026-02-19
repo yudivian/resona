@@ -27,6 +27,12 @@ class PathsConfig(BaseModel):
     db_file: str
     assets_dir: str
     temp_dir: str
+    tunespace_dir: str
+
+class FineTuneConfig(BaseModel):
+    tune_repo_id: str
+    max_concurrent_jobs: int = 1
+    checkpoints_keep_limit: int = 3
 
 class TTSModelConfig(BaseModel):
     """
@@ -47,6 +53,7 @@ class ModelsConfig(BaseModel):
     Aggregated model configurations.
     """
     tts: TTSModelConfig
+    finetune: FineTuneConfig
     semantic: SemanticModelConfig
 
 class AppConfig(BaseModel):

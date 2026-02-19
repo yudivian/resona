@@ -5,18 +5,25 @@ system:
   compute:
     tts_device: "cuda"
     embed_device: "cpu"
+    tune_device: "cuda"
     precision: "bf16"
 
 paths:
   db_file: "data/resona.db"
   assets_dir: "data/assets"
   temp_dir: "data/tmp"
+  tunespace_dir: "tunespace"
 
 models:
   tts:
     design_repo_id: "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign"
     base_repo_id: "Qwen/Qwen3-TTS-12Hz-0.6B-Base"
     sample_rate: 24000
+
+  finetune:
+    tune_repo_id: "Qwen/Qwen3-TTS-12Hz-0.6B-Base"
+    max_concurrent_jobs: 1
+    checkpoints_keep_limit: 3
   
   semantic:
     repo_id: "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"

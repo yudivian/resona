@@ -201,8 +201,16 @@ class InferenceEngine:
         model = self.tts_provider.get_synthesis_model()
         logger.info(f"Extracting vectors from: {audio_path}")
         prompts = model.create_voice_clone_prompt(ref_audio=audio_path, ref_text=text)
-        self.active_identity = prompts[0]
-        self.active_identity.ref_spk_embedding = self.active_identity.ref_spk_embedding.clone().detach()
+        temp_identity = prompts[0]
+        emb = temp_identity.ref_spk_embedding.clone().detach()
+        from qwen_tts.inference.qwen3_tts_model import VoiceClonePromptItem
+        self.active_identity = VoiceClonePromptItem(
+            ref_code=None, 
+            ref_spk_embedding=emb, 
+            x_vector_only_mode=True, 
+            icl_mode=False, 
+            ref_text=None
+        )
         logger.debug(f"Vector extracted successfully. Shape: {self.active_identity.ref_spk_embedding.shape}")
 
     def design_identity(self, prompt: str, seed: Optional[int] = None):

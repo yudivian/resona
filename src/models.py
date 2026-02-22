@@ -10,6 +10,7 @@ class ComputeConfig(BaseModel):
     """
     tts_device: str
     embed_device: str
+    tune_device: str
     precision: str
 
 class SystemConfig(BaseModel):
@@ -30,9 +31,13 @@ class PathsConfig(BaseModel):
     tunespace_dir: str
 
 class FineTuneConfig(BaseModel):
+    """
+    Settings related to the fine-tuning operations and orchestration.
+    """
     tune_repo_id: str
     max_concurrent_jobs: int = 1
     checkpoints_keep_limit: int = 3
+    sync_interval_seconds: int = 3
 
 class TTSModelConfig(BaseModel):
     """
@@ -65,16 +70,26 @@ class AppConfig(BaseModel):
     models: ModelsConfig
 
 class SourceType(str, Enum):
+    """
+    Source types
+    """
     CLONE = "clone"
     DESIGN = "design"
     BLEND = "blend"
+    TUNE = "tune"
 
 class TrackType(str, Enum):
+    """
+    Track types
+    """
     CLONE = "clone"
     DESIGN = "design"
     PREEXISTING = "preexisting"
 
 class VoiceProfile(BaseModel):
+    """
+    Detailed metadata and information for a Voice profile.
+    """
     model_config = ConfigDict(extra="ignore", use_enum_values=True)
 
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -103,10 +118,16 @@ class VoiceProfile(BaseModel):
     parameters: Dict[str, Any] = Field(default_factory=dict)
     
 class VoiceEndpoints(BaseModel):
+    """
+    API endpoints corresponding to a voice resource.
+    """
     audio: str
     bundle: str
     text: str
 class VoiceSummary(BaseModel):
+    """
+    Lightweight representation of a voice for listing.
+    """
     id: str
     name: str
     language: str
@@ -118,6 +139,9 @@ class VoiceSummary(BaseModel):
     score: Optional[float] = None
 
 class VoiceDetail(BaseModel):
+    """
+    Detailed metadata and parameters of a registered voice.
+    """
     id: str
     name: str
     description: Optional[str]
@@ -128,3 +152,51 @@ class VoiceDetail(BaseModel):
     created_at: float
     params: Dict[str, Any]
     endpoints: VoiceEndpoints
+    
+class TuneStatus(str, Enum):
+    """
+    Lifecycle states of a fine-tuning job.
+    """
+    PENDING = "pending"
+    PROCESSING_DATA = "processing_data"
+    TRAINING = "training"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELED = "canceled"
+    
+class TuneProgress(BaseModel):
+    """
+    Tracks real-time telemetry and metrics for a tuning job in memory.
+    """
+    percent: float = 0.0
+    current_epoch: int = 0
+    total_epochs: int = 0
+    current_step: int = 0
+    total_steps: int = 0
+    current_loss: float = 0.0
+    loss_history: List[float] = Field(default_factory=list)
+
+class TuneRecord(BaseModel):
+    """
+    Complete persistent record of a fine-tuning experiment, including its state and progress.
+    """
+    model_config = ConfigDict(extra="ignore", use_enum_values=True)
+
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    status: TuneStatus = TuneStatus.PENDING
+    created_at: float = Field(default_factory=time.time)
+    updated_at: float = Field(default_factory=time.time)
+    error_message: Optional[str] = None
+    
+    workspace_path: str 
+    
+    dataset_manifest_path: str 
+    reference_audio_path: str       
+    training_params: Dict[str, Any] = Field(default_factory=dict)
+
+    name: str
+    language: str = "Auto"
+    description: Optional[str] = None
+    tags: List[str] = Field(default_factory=list)
+    
+    progress: TuneProgress = Field(default_factory=TuneProgress)

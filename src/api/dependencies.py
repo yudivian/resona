@@ -4,6 +4,7 @@ from typing import Optional, Any
 
 from src.config import settings, AppConfig
 from src.backend.store import VoiceStore
+from src.emotions.manager import EmotionManager
 
 logger = logging.getLogger(__name__)
 
@@ -72,4 +73,41 @@ def get_embed_engine() -> Optional[Any]:
         return None
     except Exception as e:
         logger.critical(f"Failed to initialize Embedding Model during cold start: {e}")
+        return None
+    
+@lru_cache()
+def get_emotion_manager() -> EmotionManager:
+    """
+    Provides a singleton instance of the EmotionManager.
+    
+    Returns:
+        EmotionManager: The initialized emotion catalog controller.
+    """
+    logger.debug("Initializing EmotionManager for API request.")
+    return EmotionManager(settings)
+
+@lru_cache()
+def get_tts_provider() -> Optional[Any]:
+    """
+    Lazily initializes the heavy TTS Model Provider.
+    Loaded only on the first synthesis request to save memory during API startup.
+    
+    Returns:
+        Optional[Any]: The initialized TTSModelProvider instance or None if it fails.
+    """
+    try:
+        logger.info("❄️ Cold Start: Loading TTS Provider...")
+        
+        from src.backend.engine import TTSModelProvider
+        
+        provider = TTSModelProvider(settings)
+        
+        logger.info("✅ TTS Provider ready.")
+        return provider
+        
+    except ImportError as e:
+        logger.critical(f"Failed to import TTS backend libraries: {e}")
+        return None
+    except Exception as e:
+        logger.critical(f"Failed to initialize TTS Model during cold start: {e}")
         return None

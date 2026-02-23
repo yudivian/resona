@@ -201,3 +201,27 @@ class TuneRecord(BaseModel):
     tags: List[str] = Field(default_factory=list)
     
     progress: TuneProgress = Field(default_factory=TuneProgress)
+    
+class EmotionSummary(BaseModel):
+    id: str
+    name: str
+    modifiers: Dict[str, float]
+
+class IntensifierSummary(BaseModel):
+    id: str
+    name: str
+    multiplier: float
+
+class SynthesisRequest(BaseModel):
+    text: str = Field(..., min_length=1, description="The script to synthesize.")
+    language: Optional[str] = Field(None, description="ISO language code. Falls back to voice default if omitted.")
+
+class EmotionSynthesisRequest(SynthesisRequest):
+    emotion_id: str = Field(..., description="Canonical ID of the emotion.")
+    intensifier_id: Optional[str] = Field(None, description="Canonical ID of the intensifier.")
+
+class TaskStatusResponse(BaseModel):
+    task_id: str
+    status: str
+    download_url: Optional[str] = None
+    error: Optional[str] = None

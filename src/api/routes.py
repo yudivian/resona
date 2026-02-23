@@ -6,27 +6,38 @@ from fastapi import APIRouter, HTTPException, Query, Depends
 from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
 
 from src.models import (
-    VoiceSummary, 
-    VoiceDetail, 
-    VoiceEndpoints
+    VoiceSummary,
+    VoiceDetail,
+    VoiceEndpoints,
+    EmotionSummary,
+    IntensifierSummary,
 )
 from src.backend.store import VoiceStore
 from src.backend.io import VoiceBundleIO
-from src.api.dependencies import get_store, get_embed_engine, get_config
+from src.api.dependencies import (
+    get_store,
+    get_embed_engine,
+    get_config,
+    get_emotion_manager,
+)
+from src.emotions.manager import EmotionManager
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # --- DISCOVERY & SEARCH ENDPOINTS ---
 
+
 @router.get("/voices", response_model=List[VoiceSummary])
 def list_voices(
     lang: Optional[str] = None,
     tag: Optional[str] = None,
     source_type: Optional[str] = None,
-    limit: int = Query(50, ge=1, le=100, description="Max records to retrieve per page"),
+    limit: int = Query(
+        50, ge=1, le=100, description="Max records to retrieve per page"
+    ),
     offset: int = Query(0, ge=0, description="Number of records to skip"),
-    store: VoiceStore = Depends(get_store)
+    store: VoiceStore = Depends(get_store),
 ):
     """
     Retrieves a paginated, filtered catalog of voice profiles from the persistence layer.
@@ -34,13 +45,13 @@ def list_voices(
     Architectural Note:
     This endpoint acts as the primary data feed for UI lists and external integrations.
     Unlike the detail endpoint, it strictly returns 'VoiceSummary' objects. This DTO pattern
-    strips away heavy data (like vectors or long prompts) to minimize network latency 
+    strips away heavy data (like vectors or long prompts) to minimize network latency
     and serialization overhead during bulk retrieval.
 
     Filtering Strategy:
-    Filtering is currently applied in-memory after fetching profiles from the store. 
+    Filtering is currently applied in-memory after fetching profiles from the store.
     While this is performant for datasets up to ~10k records (typical for this domain),
-    future iterations might push these predicates down to the database query layer 
+    future iterations might push these predicates down to the database query layer
     if the dataset grows significantly.
 
     Args:
@@ -52,7 +63,7 @@ def list_voices(
         store (VoiceStore): Injected singleton of the persistence controller.
 
     Returns:
-        List[VoiceSummary]: An ordered list of lightweight voice representations, 
+        List[VoiceSummary]: An ordered list of lightweight voice representations,
         sorted by creation date (newest first).
     """
     all_profiles = store.get_all()
@@ -61,21 +72,19 @@ def list_voices(
     for profile in all_profiles:
         if lang and profile.language.lower() != lang.lower():
             continue
-        
+
         if tag:
             profile_tags = [t.lower() for t in profile.tags]
             if tag.lower() not in profile_tags:
                 continue
-            
-        # FIX: We cast to string to handle cases where source_type comes as a raw string 
-        # from the DB or as an Enum object. This prevents AttributeError on .value access.
+
         if source_type and str(profile.source_type) != source_type:
             continue
-            
+
         filtered_profiles.append(profile)
 
     filtered_profiles.sort(key=lambda x: x.created_at, reverse=True)
-    
+
     paginated_profiles = filtered_profiles[offset : offset + limit]
 
     return [
@@ -84,19 +93,21 @@ def list_voices(
             name=p.name,
             language=p.language,
             tags=p.tags,
-            source_type=p.source_type, # Pydantic handles Enum->str serialization automatically
+            source_type=p.source_type,  
             created_at=p.created_at,
             description=p.description,
-            preview_url=f"/v1/voices/{p.id}/audio"
-        ) for p in paginated_profiles
+            preview_url=f"/v1/voices/{p.id}/audio",
+        )
+        for p in paginated_profiles
     ]
+
 
 @router.get("/search", response_model=List[VoiceSummary])
 def search_voices(
     q: str = Query(..., min_length=2, description="Natural language search query"),
     limit: int = Query(10, ge=1, le=50, description="Max relevant results"),
     store: VoiceStore = Depends(get_store),
-    embed_engine: Any = Depends(get_embed_engine) 
+    embed_engine: Any = Depends(get_embed_engine),
 ):
     """
     Performs a semantic similarity search using high-dimensional vector embeddings.
@@ -106,10 +117,10 @@ def search_voices(
     2. The engine generates a dense vector representation of the query intent.
     3. This vector is compared against the pre-indexed 'semantic_embedding' of all voices
        using Cosine Similarity.
-    
+
     Dependency Note:
     This endpoint triggers the 'Lazy Loading' of the ML engine if it hasn't been used yet.
-    This design decision offloads the heavy memory cost of PyTorch/ONNX to the first 
+    This design decision offloads the heavy memory cost of PyTorch/ONNX to the first
     actual search request, rather than slowing down the API startup.
 
     Args:
@@ -126,8 +137,13 @@ def search_voices(
         HTTPException(500): If the vector inference process crashes.
     """
     if not embed_engine:
-        logger.error("Semantic search requested but the Embedding Engine is not available.")
-        raise HTTPException(status_code=503, detail="Search service unavailable due to initialization failure.")
+        logger.error(
+            "Semantic search requested but the Embedding Engine is not available."
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="Search service unavailable due to initialization failure.",
+        )
 
     try:
         query_vector = embed_engine.generate_embedding(q)
@@ -146,27 +162,26 @@ def search_voices(
             source_type=p.source_type,
             created_at=p.created_at,
             description=p.description,
-            preview_url=f"/v1/voices/{p.id}/audio"
-        ) for p in results
+            preview_url=f"/v1/voices/{p.id}/audio",
+        )
+        for p in results
     ]
 
+
 @router.get("/voices/{voice_id}", response_model=VoiceDetail)
-def get_voice_detail(
-    voice_id: str, 
-    store: VoiceStore = Depends(get_store)
-):
+def get_voice_detail(voice_id: str, store: VoiceStore = Depends(get_store)):
     """
     Retrieves the complete technical specification for a single voice profile.
 
     This endpoint acts as the Single Source of Truth (SSOT) for consuming a voice.
-    Unlike the summary endpoints, it exposes the 'anchor_text' (critical for 
-    In-Context Learning/Cloning) and the specific generation parameters used 
+    Unlike the summary endpoints, it exposes the 'anchor_text' (critical for
+    In-Context Learning/Cloning) and the specific generation parameters used
     to create the voice.
 
     HATEOAS Implementation:
-    The response includes an 'endpoints' object providing pre-constructed URLs 
-    to binary assets (audio, bundle, text). This decouples the client from knowing 
-    the API's internal URL routing structure, allowing backend refactors without 
+    The response includes an 'endpoints' object providing pre-constructed URLs
+    to binary assets (audio, bundle, text). This decouples the client from knowing
+    the API's internal URL routing structure, allowing backend refactors without
     breaking client implementations.
 
     Args:
@@ -196,29 +211,29 @@ def get_voice_detail(
         endpoints=VoiceEndpoints(
             audio=f"/v1/voices/{profile.id}/audio",
             bundle=f"/v1/voices/{profile.id}/bundle",
-            text=f"/v1/voices/{profile.id}/text"
-        )
+            text=f"/v1/voices/{profile.id}/text",
+        ),
     )
+
 
 # --- ASSET DELIVERY ENDPOINTS ---
 
+
 @router.get("/voices/{voice_id}/audio")
 def get_voice_audio(
-    voice_id: str, 
-    store: VoiceStore = Depends(get_store),
-    config = Depends(get_config)
+    voice_id: str, store: VoiceStore = Depends(get_store), config=Depends(get_config)
 ):
     """
     Streams the raw audio reference file (Anchor) for a specific voice.
 
     Security & Resolution:
-    This endpoint resolves the logical 'voice_id' to a physical file path stored 
-    in the secured assets directory. It validates that the file actually exists 
-    on the disk to prevent 500 errors during streaming. This abstraction prevents 
+    This endpoint resolves the logical 'voice_id' to a physical file path stored
+    in the secured assets directory. It validates that the file actually exists
+    on the disk to prevent 500 errors during streaming. This abstraction prevents
     Path Traversal attacks by not accepting file paths directly from the user.
 
     MIME Type:
-    Served as 'audio/wav'. This allows direct playback in HTML5 <audio> tags 
+    Served as 'audio/wav'. This allows direct playback in HTML5 <audio> tags
     and seamless integration with TTS inference engines that require WAV input.
 
     Args:
@@ -234,25 +249,27 @@ def get_voice_audio(
         raise HTTPException(status_code=404, detail="Audio asset path is undefined.")
 
     file_path = os.path.join(config.paths.assets_dir, profile.anchor_audio_path)
-    
+
     if not os.path.exists(file_path):
-        logger.error(f"Data Integrity Error: File for voice {voice_id} missing at {file_path}")
-        raise HTTPException(status_code=404, detail="Physical audio file missing on server.")
+        logger.error(
+            f"Data Integrity Error: File for voice {voice_id} missing at {file_path}"
+        )
+        raise HTTPException(
+            status_code=404, detail="Physical audio file missing on server."
+        )
 
     return FileResponse(file_path, media_type="audio/wav")
 
+
 @router.get("/voices/{voice_id}/text")
-def get_voice_text(
-    voice_id: str, 
-    store: VoiceStore = Depends(get_store)
-):
+def get_voice_text(voice_id: str, store: VoiceStore = Depends(get_store)):
     """
     Retrieves the canonical reference text for the voice.
 
     Why JSON?
-    Returning raw text can lead to encoding issues or ambiguity with line breaks 
-    in some HTTP clients. Wrapping the text in a JSON object `{"text": "..."}` 
-    ensures strict UTF-8 compliance and makes it easier for frontend clients 
+    Returning raw text can lead to encoding issues or ambiguity with line breaks
+    in some HTTP clients. Wrapping the text in a JSON object `{"text": "..."}`
+    ensures strict UTF-8 compliance and makes it easier for frontend clients
     to parse and bind the data to UI components.
 
     Args:
@@ -265,14 +282,13 @@ def get_voice_text(
     profile = store.get_profile(voice_id)
     if not profile:
         raise HTTPException(status_code=404, detail="Voice not found")
-        
+
     return JSONResponse(content={"text": profile.anchor_text})
+
 
 @router.get("/voices/{voice_id}/bundle")
 def download_voice_bundle(
-    voice_id: str, 
-    store: VoiceStore = Depends(get_store),
-    config = Depends(get_config)
+    voice_id: str, store: VoiceStore = Depends(get_store), config=Depends(get_config)
 ):
     """
     Dynamically packs and streams a portable Voice Bundle (.rnb).
@@ -282,11 +298,11 @@ def download_voice_bundle(
     1. Fetches the latest metadata from the DB.
     2. Reads the physical audio file from disk.
     3. Serializes both into a ZIP archive structure in memory.
-    
+
     Use Case:
     Essential for migrating voices between Resona instances (e.g., Dev -> Prod)
-    or creating backups. By generating the bundle on-the-fly, we guarantee 
-    that the export always represents the exact current state of the voice, 
+    or creating backups. By generating the bundle on-the-fly, we guarantee
+    that the export always represents the exact current state of the voice,
     including any recent metadata edits.
 
     Args:
@@ -310,14 +326,127 @@ def download_voice_bundle(
             audio_bytes = f.read()
 
         bundle_bytes = VoiceBundleIO.pack_bundle(profile.model_dump(), audio_bytes)
-        
+
         safe_filename = f"{profile.name.replace(' ', '_')}_{voice_id[:6]}.rnb"
 
         return StreamingResponse(
             io.BytesIO(bundle_bytes),
             media_type="application/zip",
-            headers={"Content-Disposition": f'attachment; filename="{safe_filename}"'}
+            headers={"Content-Disposition": f'attachment; filename="{safe_filename}"'},
         )
     except Exception as e:
         logger.error(f"Bundle generation failed for {voice_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to generate voice bundle.")
+
+@router.get("/emotions", response_model=List[EmotionSummary])
+def list_emotions(
+    lang: str = Query("en", description="ISO language code for UI localization (e.g., 'es', 'en')"),
+    manager: EmotionManager = Depends(get_emotion_manager)
+):
+    """
+    Retrieves the catalog of available emotional prosody profiles.
+    
+    The response automatically maps the display names to the requested language
+    falling back to the canonical ID if a translation is missing.
+    """
+    vocab = manager.get_localized_vocab(lang=lang)["emotions"]
+    results = []
+    
+    for eid, data in manager.catalog.get("emotions", {}).items():
+        results.append(
+            EmotionSummary(
+                id=eid,
+                name=vocab.get(eid, eid),
+                modifiers=data.get("modifiers", {})
+            )
+        )
+        
+    return sorted(results, key=lambda x: x.name.lower())
+
+
+@router.get("/intensifiers", response_model=List[IntensifierSummary])
+def list_intensifiers(
+    lang: str = Query("en", description="ISO language code for UI localization"),
+    manager: EmotionManager = Depends(get_emotion_manager)
+):
+    """
+    Retrieves the catalog of available prosody intensifiers.
+    """
+    vocab = manager.get_localized_vocab(lang=lang)["intensifiers"]
+    results = []
+    
+    for iid, data in manager.catalog.get("intensifiers", {}).items():
+        results.append(
+            IntensifierSummary(
+                id=iid,
+                name=vocab.get(iid, iid),
+                multiplier=data.get("multiplier", 1.0)
+            )
+        )
+        
+    return sorted(results, key=lambda x: x.name.lower())
+
+@router.get("/emotions/{emotion_id}", response_model=EmotionSummary)
+def get_emotion(
+    emotion_id: str,
+    lang: str = Query("en", description="ISO language code for UI localization"),
+    manager: EmotionManager = Depends(get_emotion_manager)
+):
+    """
+    Retrieves a specific emotional prosody profile by its canonical ID.
+    
+    Args:
+        emotion_id (str): The canonical ID of the emotion.
+        lang (str): The target language for the 'name' field.
+        manager (EmotionManager): Injected singleton of the emotion controller.
+
+    Returns:
+        EmotionSummary: The localized emotion data.
+
+    Raises:
+        HTTPException: If the emotion_id does not exist in the catalog.
+    """
+    emotion_data = manager.catalog.get("emotions", {}).get(emotion_id)
+    if not emotion_data:
+        raise HTTPException(status_code=404, detail=f"Emotion '{emotion_id}' not found.")
+        
+    vocab = manager.get_localized_vocab(lang=lang)["emotions"]
+    
+    return EmotionSummary(
+        id=emotion_id,
+        name=vocab.get(emotion_id, emotion_id),
+        modifiers=emotion_data.get("modifiers", {})
+    )
+
+
+@router.get("/intensifiers/{intensifier_id}", response_model=IntensifierSummary)
+def get_intensifier(
+    intensifier_id: str,
+    lang: str = Query("en", description="ISO language code for UI localization"),
+    manager: EmotionManager = Depends(get_emotion_manager)
+):
+    """
+    Retrieves a specific prosody intensifier by its canonical ID.
+    
+    Args:
+        intensifier_id (str): The canonical ID of the intensifier.
+        lang (str): The target language for the 'name' field.
+        manager (EmotionManager): Injected singleton of the emotion controller.
+
+    Returns:
+        IntensifierSummary: The localized intensifier data.
+
+    Raises:
+        HTTPException: If the intensifier_id does not exist in the catalog.
+    """
+    intensifier_data = manager.catalog.get("intensifiers", {}).get(intensifier_id)
+    if not intensifier_data:
+        raise HTTPException(status_code=404, detail=f"Intensifier '{intensifier_id}' not found.")
+        
+    vocab = manager.get_localized_vocab(lang=lang)["intensifiers"]
+    
+    return IntensifierSummary(
+        id=intensifier_id,
+        name=vocab.get(intensifier_id, intensifier_id),
+        multiplier=intensifier_data.get("multiplier", 1.0)
+    )

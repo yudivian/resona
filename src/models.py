@@ -29,6 +29,7 @@ class PathsConfig(BaseModel):
     assets_dir: str
     temp_dir: str
     tunespace_dir: str
+    emotionspace_dir: str
 
 class FineTuneConfig(BaseModel):
     """

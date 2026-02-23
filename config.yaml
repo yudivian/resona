@@ -13,6 +13,7 @@ paths:
   assets_dir: "data/assets"
   temp_dir: "data/tmp"
   tunespace_dir: "tunespace"
+  emotionspace_dir: "emotionspace"
 
 models:
   tts:

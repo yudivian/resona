@@ -297,14 +297,25 @@ class InferenceEngine:
         )
         self.active_seed = seed
         self.last_anchor_path = anchor_path
-
-    def render(self, text: str, output_path: Optional[str] = None) -> str:
+        
+    def _core_synthesis(
+        self, 
+        text: str, 
+        output_path: Optional[str] = None,
+        temperature: Optional[float] = None,
+        top_p: Optional[float] = None,
+        repetition_penalty: Optional[float] = None
+    ) -> str:
         """
-        Synthesizes audio using the active identity vector and target text.
+        Executes the underlying text-to-speech synthesis process using the active identity vector
+        and specific generation hyperparameters.
 
         Args:
             text (str): The text string to synthesize.
-            output_path (Optional[str]): Specific path to save the generated audio.
+            output_path (Optional[str]): Specific path to save the generated audio. If None, a temporary path is generated.
+            temperature (Optional[float]): Sampling temperature to control randomness and pitch variability.
+            top_p (Optional[float]): Nucleus sampling probability threshold to constrain vocabulary selection.
+            repetition_penalty (Optional[float]): Penalty factor to reduce repeated acoustic tokens and alter speech rate.
 
         Returns:
             str: Path to the generated audio file.
@@ -321,17 +332,95 @@ class InferenceEngine:
             output_path = os.path.join(self.config.paths.temp_dir, f"render_{int(time.time()*1000)}.wav")
 
         logger.info(f"Rendering synthesis to {output_path}...")
-        if torch.cuda.is_available(): torch.cuda.synchronize()
+        if torch.cuda.is_available(): 
+            torch.cuda.synchronize()
         
         wavs, fs = model.generate_voice_clone(
             text=text,
             language=full_lang,
-            voice_clone_prompt=[self.active_identity]
+            voice_clone_prompt=[self.active_identity],
+            temperature=temperature,
+            top_p=top_p,
+            repetition_penalty=repetition_penalty
         )
         
-        if torch.cuda.is_available(): torch.cuda.synchronize()
+        if torch.cuda.is_available(): 
+            torch.cuda.synchronize()
+            
         sf.write(output_path, wavs[0], fs)
+        logger.info(f"Ending rendering synthesis")
         return output_path
+
+    def render(self, text: str, output_path: Optional[str] = None) -> str:
+        """
+        Synthesizes audio using the active identity vector and target text with the model's default generation parameters.
+
+        Args:
+            text (str): The text string to synthesize.
+            output_path (Optional[str]): Specific path to save the generated audio.
+
+        Returns:
+            str: Path to the generated audio file.
+        """
+        logger.info(f"Starting normal rendering synthesis")
+        return self._core_synthesis(text=text, output_path=output_path)
+
+    def render_with_emotion(self, text: str, emotion_params: Dict[str, float], output_path: Optional[str] = None) -> str:
+        """
+        Synthesizes audio using the active identity vector and target text, applying specific emotion-driven hyperparameters.
+
+        Args:
+            text (str): The text string to synthesize.
+            emotion_params (Dict[str, float]): Dictionary containing the 'temp', 'top_p', and 'penalty' numerical modifiers.
+            output_path (Optional[str]): Specific path to save the generated audio.
+
+        Returns:
+            str: Path to the generated audio file.
+        """
+        logger.info(f"Starting rendering with emotions synthesis")
+        return self._core_synthesis(
+            text=text,
+            output_path=output_path,
+            temperature=emotion_params.get("temp"),
+            top_p=emotion_params.get("top_p"),
+            repetition_penalty=emotion_params.get("penalty")
+        )        
+        
+
+    # def render(self, text: str, output_path: Optional[str] = None) -> str:
+    #     """
+    #     Synthesizes audio using the active identity vector and target text.
+
+    #     Args:
+    #         text (str): The text string to synthesize.
+    #         output_path (Optional[str]): Specific path to save the generated audio.
+
+    #     Returns:
+    #         str: Path to the generated audio file.
+    #     """
+    #     if not self.active_identity or self.active_seed is None:
+    #         logger.error("Synthesis failed: Active identity is missing.")
+    #         raise ValueError("Identity incomplete (Vector or Seed missing).")
+
+    #     set_global_seed(self.active_seed)
+    #     model = self.tts_provider.get_synthesis_model()
+    #     full_lang = LANGUAGE_MAP.get(self.lang, "English")
+        
+    #     if not output_path:
+    #         output_path = os.path.join(self.config.paths.temp_dir, f"render_{int(time.time()*1000)}.wav")
+
+    #     logger.info(f"Rendering synthesis to {output_path}...")
+    #     if torch.cuda.is_available(): torch.cuda.synchronize()
+        
+    #     wavs, fs = model.generate_voice_clone(
+    #         text=text,
+    #         language=full_lang,
+    #         voice_clone_prompt=[self.active_identity]
+    #     )
+        
+    #     if torch.cuda.is_available(): torch.cuda.synchronize()
+    #     sf.write(output_path, wavs[0], fs)
+    #     return output_path
 
     def get_identity_vector(self) -> List[float]:
         """

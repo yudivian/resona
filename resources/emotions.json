@@ -1,0 +1,1491 @@
+{
+  "intensifiers": {
+    "minimal": {
+      "multiplier": 0.25,
+      "localized_names": {
+        "en": "Minimal",
+        "es": "Mínimo",
+        "fr": "Minimal",
+        "de": "Minimal",
+        "it": "Minimo",
+        "pt": "Mínimo",
+        "zh": "极轻",
+        "ja": "最小",
+        "ko": "최소",
+        "ru": "Минимальный"
+      }
+    },
+    "subtle": {
+      "multiplier": 0.6,
+      "localized_names": {
+        "en": "Subtle",
+        "es": "Sutil",
+        "fr": "Léger",
+        "de": "Subtil",
+        "it": "Sottile",
+        "pt": "Sutil",
+        "zh": "轻微",
+        "ja": "控えめ",
+        "ko": "약간",
+        "ru": "Слегка"
+      }
+    },
+    "strong": {
+      "multiplier": 1.4,
+      "localized_names": {
+        "en": "Strong",
+        "es": "Fuerte",
+        "fr": "Fort",
+        "de": "Stark",
+        "it": "Forte",
+        "pt": "Forte",
+        "zh": "强烈",
+        "ja": "強い",
+        "ko": "강한",
+        "ru": "Сильно"
+      }
+    },
+    "extreme": {
+      "multiplier": 2.0,
+      "localized_names": {
+        "en": "Extreme",
+        "es": "Extremo",
+        "fr": "Extrême",
+        "de": "Extrem",
+        "it": "Estremo",
+        "pt": "Extremo",
+        "zh": "极度",
+        "ja": "極端",
+        "ko": "매우",
+        "ru": "Крайне"
+      }
+    }
+  },
+  "emotions": {
+    "angry": {
+      "modifiers": {
+        "temp": 0.3,
+        "penalty": 0.1,
+        "top_p": 0.05
+      },
+      "localized_names": {
+        "en": "Angry",
+        "es": "Enojado",
+        "fr": "En colère",
+        "de": "Wütend",
+        "it": "Arrabbiato",
+        "pt": "Irritado",
+        "zh": "生气",
+        "ja": "怒り",
+        "ko": "화난",
+        "ru": "Злой"
+      }
+    },
+    "sad": {
+      "modifiers": {
+        "temp": -0.2,
+        "penalty": -0.05,
+        "top_p": -0.1
+      },
+      "localized_names": {
+        "en": "Sad",
+        "es": "Triste",
+        "fr": "Triste",
+        "de": "Traurig",
+        "it": "Triste",
+        "pt": "Triste",
+        "zh": "悲伤",
+        "ja": "悲しい",
+        "ko": "슬픈",
+        "ru": "Грустный"
+      }
+    },
+    "happy": {
+      "modifiers": {
+        "temp": 0.2,
+        "penalty": 0.05,
+        "top_p": 0.05
+      },
+      "localized_names": {
+        "en": "Happy",
+        "es": "Feliz",
+        "fr": "Heureux",
+        "de": "Glücklich",
+        "it": "Felice",
+        "pt": "Feliz",
+        "zh": "开心",
+        "ja": "嬉しい",
+        "ko": "행복한",
+        "ru": "Счастливый"
+      }
+    },
+    "fearful": {
+      "modifiers": {
+        "temp": 0.25,
+        "penalty": 0.15,
+        "top_p": 0.0
+      },
+      "localized_names": {
+        "en": "Fearful",
+        "es": "Temeroso",
+        "fr": "Peur",
+        "de": "Ängstlich",
+        "it": "Impaurito",
+        "pt": "Temeroso",
+        "zh": "恐惧",
+        "ja": "恐ろしい",
+        "ko": "두려운",
+        "ru": "Испуганный"
+      }
+    },
+    "disgusted": {
+      "modifiers": {
+        "temp": 0.1,
+        "penalty": 0.1,
+        "top_p": -0.05
+      },
+      "localized_names": {
+        "en": "Disgusted",
+        "es": "Asqueado",
+        "fr": "Dégoûté",
+        "de": "Ekel",
+        "it": "Disgustato",
+        "pt": "Nojo",
+        "zh": "厌恶",
+        "ja": "嫌悪",
+        "ko": "혐오",
+        "ru": "Чувство отвращения"
+      }
+    },
+    "surprised": {
+      "modifiers": {
+        "temp": 0.35,
+        "penalty": 0.1,
+        "top_p": 0.1
+      },
+      "localized_names": {
+        "en": "Surprised",
+        "es": "Sorprendido",
+        "fr": "Surpris",
+        "de": "Überrascht",
+        "it": "Sorpreso",
+        "pt": "Surpreso",
+        "zh": "惊讶",
+        "ja": "驚いた",
+        "ko": "놀란",
+        "ru": "Удивленный"
+      }
+    },
+    "furious": {
+      "modifiers": {
+        "temp": 0.5,
+        "penalty": 0.2,
+        "top_p": 0.1
+      },
+      "localized_names": {
+        "en": "Furious",
+        "es": "Furioso",
+        "fr": "Furieux",
+        "de": "Wütend",
+        "it": "Furioso",
+        "pt": "Furioso",
+        "zh": "愤怒",
+        "ja": "激怒",
+        "ko": "격노한",
+        "ru": "Яростный"
+      }
+    },
+    "enraged": {
+      "modifiers": {
+        "temp": 0.6,
+        "penalty": 0.25,
+        "top_p": 0.15
+      },
+      "localized_names": {
+        "en": "Enraged",
+        "es": "Enfurecido",
+        "fr": "Enragé",
+        "de": "Rasend",
+        "it": "Infuriato",
+        "pt": "Enfurecido",
+        "zh": "暴怒",
+        "ja": "激高",
+        "ko": "분노한",
+        "ru": "Разгневанный"
+      }
+    },
+    "annoyed": {
+      "modifiers": {
+        "temp": 0.15,
+        "penalty": 0.05,
+        "top_p": 0.0
+      },
+      "localized_names": {
+        "en": "Annoyed",
+        "es": "Molesto",
+        "fr": "Agacé",
+        "de": "Genervt",
+        "it": "Infastidito",
+        "pt": "Incomodado",
+        "zh": "恼火",
+        "ja": "イライラ",
+        "ko": "짜증난",
+        "ru": "Раздраженный"
+      }
+    },
+    "melancholic": {
+      "modifiers": {
+        "temp": -0.3,
+        "penalty": -0.1,
+        "top_p": -0.15
+      },
+      "localized_names": {
+        "en": "Melancholic",
+        "es": "Melancólico",
+        "fr": "Mélancolique",
+        "de": "Melancholisch",
+        "it": "Malinconico",
+        "pt": "Melancólico",
+        "zh": "忧郁",
+        "ja": "憂鬱",
+        "ko": "우울한",
+        "ru": "Меланхоличный"
+      }
+    },
+    "disappointed": {
+      "modifiers": {
+        "temp": -0.15,
+        "penalty": -0.05,
+        "top_p": -0.05
+      },
+      "localized_names": {
+        "en": "Disappointed",
+        "es": "Decepcionado",
+        "fr": "Déçu",
+        "de": "Enttäuscht",
+        "it": "Deluso",
+        "pt": "Decepcionado",
+        "zh": "失望",
+        "ja": "失望した",
+        "ko": "실망한",
+        "ru": "Разочарованный"
+      }
+    },
+    "ecstatic": {
+      "modifiers": {
+        "temp": 0.5,
+        "penalty": 0.2,
+        "top_p": 0.15
+      },
+      "localized_names": {
+        "en": "Ecstatic",
+        "es": "Eufórico",
+        "fr": "Extatique",
+        "de": "Ekstatisch",
+        "it": "Estatico",
+        "pt": "Extasiado",
+        "zh": "狂喜",
+        "ja": "心酔した",
+        "ko": "황홀한",
+        "ru": "Восторженный"
+      }
+    },
+    "content": {
+      "modifiers": {
+        "temp": -0.1,
+        "penalty": 0.0,
+        "top_p": 0.0
+      },
+      "localized_names": {
+        "en": "Content",
+        "es": "Satisfecho",
+        "fr": "Content",
+        "de": "Zufrieden",
+        "it": "Contento",
+        "pt": "Contente",
+        "zh": "满意",
+        "ja": "満足",
+        "ko": "만족한",
+        "ru": "Довольный"
+      }
+    },
+    "terrified": {
+      "modifiers": {
+        "temp": 0.4,
+        "penalty": 0.25,
+        "top_p": 0.05
+      },
+      "localized_names": {
+        "en": "Terrified",
+        "es": "Aterrorizado",
+        "fr": "Terrifié",
+        "de": "Terrorisiert",
+        "it": "Terrorizzato",
+        "pt": "Aterrorizado",
+        "zh": "恐惧",
+        "ja": "恐怖",
+        "ko": "겁에 질린",
+        "ru": "Терроризированный"
+      }
+    },
+    "anxious": {
+      "modifiers": {
+        "temp": 0.2,
+        "penalty": 0.15,
+        "top_p": 0.0
+      },
+      "localized_names": {
+        "en": "Anxious",
+        "es": "Ansioso",
+        "fr": "Anxieux",
+        "de": "Ängstlich",
+        "it": "Ansioso",
+        "pt": "Ansioso",
+        "zh": "焦虑",
+        "ja": "不安",
+        "ko": "불안한",
+        "ru": "Тревожный"
+      }
+    },
+    "sarcastic": {
+      "modifiers": {
+        "temp": 0.15,
+        "penalty": 0.05,
+        "top_p": 0.0
+      },
+      "localized_names": {
+        "en": "Sarcastic",
+        "es": "Sarcástico",
+        "fr": "Sarcastique",
+        "de": "Sarkastisch",
+        "it": "Sarcastico",
+        "pt": "Sarcástico",
+        "zh": "讽刺",
+        "ja": "皮肉",
+        "ko": "비꼬는",
+        "ru": "Саркастичный"
+      }
+    },
+    "mocking": {
+      "modifiers": {
+        "temp": 0.2,
+        "penalty": 0.1,
+        "top_p": 0.05
+      },
+      "localized_names": {
+        "en": "Mocking",
+        "es": "Burlón",
+        "fr": "Moqueur",
+        "de": "Spöttisch",
+        "it": "Beffardo",
+        "pt": "Zombador",
+        "zh": "嘲弄",
+        "ja": "あざけるような",
+        "ko": "비웃는",
+        "ru": "Насмешливый"
+      }
+    },
+    "condescending": {
+      "modifiers": {
+        "temp": 0.1,
+        "penalty": 0.05,
+        "top_p": -0.05
+      },
+      "localized_names": {
+        "en": "Condescending",
+        "es": "Condescendiente",
+        "fr": "Condescendant",
+        "de": "Herablassend",
+        "it": "Condiscendente",
+        "pt": "Condescendente",
+        "zh": "居高临下",
+        "ja": "謙虚な",
+        "ko": "거들먹거리는",
+        "ru": "Снисходительный"
+      }
+    },
+    "dismissive": {
+      "modifiers": {
+        "temp": 0.05,
+        "penalty": 0.0,
+        "top_p": -0.1
+      },
+      "localized_names": {
+        "en": "Dismissive",
+        "es": "Desdeñoso",
+        "fr": "Méprisant",
+        "de": "Geringschätzig",
+        "it": "Sdegnoso",
+        "pt": "Desdeñoso",
+        "zh": "轻蔑",
+        "ja": "否定的",
+        "ko": "무시하는",
+        "ru": "Презрительный"
+      }
+    },
+    "contemptuous": {
+      "modifiers": {
+        "temp": 0.15,
+        "penalty": 0.1,
+        "top_p": -0.05
+      },
+      "localized_names": {
+        "en": "Contemptuous",
+        "es": "Despectivo",
+        "fr": "Méprisant",
+        "de": "Verächtlich",
+        "it": "Sprezzante",
+        "pt": "Desprezível",
+        "zh": "蔑视",
+        "ja": "軽蔑的",
+        "ko": "경멸하는",
+        "ru": "Презрительный"
+      }
+    },
+    "sympathetic": {
+      "modifiers": {
+        "temp": -0.1,
+        "penalty": -0.05,
+        "top_p": 0.0
+      },
+      "localized_names": {
+        "en": "Sympathetic",
+        "es": "Compasivo",
+        "fr": "Compatissant",
+        "de": "Mitfühlend",
+        "it": "Comprensivo",
+        "pt": "Simpático",
+        "zh": "同情",
+        "ja": "共感的",
+        "ko": "동정적인",
+        "ru": "Сочувствующий"
+      }
+    },
+    "apologetic": {
+      "modifiers": {
+        "temp": -0.15,
+        "penalty": -0.05,
+        "top_p": -0.05
+      },
+      "localized_names": {
+        "en": "Apologetic",
+        "es": "Apologético",
+        "fr": "Désolé",
+        "de": "Apologetisch",
+        "it": "Disfacente",
+        "pt": "Apologético",
+        "zh": "道歉",
+        "ja": "謝罪",
+        "ko": "사과하는",
+        "ru": "Виноватый"
+      }
+    },
+    "pleading": {
+      "modifiers": {
+        "temp": 0.1,
+        "penalty": 0.1,
+        "top_p": 0.0
+      },
+      "localized_names": {
+        "en": "Pleading",
+        "es": "Suplicante",
+        "fr": "Suppliant",
+        "de": "Flehend",
+        "it": "Supplichevole",
+        "pt": "Suplicante",
+        "zh": "恳求",
+        "ja": "嘆願",
+        "ko": "애원하는",
+        "ru": "Умоляющий"
+      }
+    },
+    "begging": {
+      "modifiers": {
+        "temp": 0.2,
+        "penalty": 0.15,
+        "top_p": 0.05
+      },
+      "localized_names": {
+        "en": "Begging",
+        "es": "Mendicante",
+        "fr": "Mendiant",
+        "de": "Bettelnd",
+        "it": "Supplicante",
+        "pt": "Mendicante",
+        "zh": "乞求",
+        "ja": "物乞い",
+        "ko": "구걸하는",
+        "ru": "Просящий"
+      }
+    },
+    "confident": {
+      "modifiers": {
+        "temp": -0.1,
+        "penalty": -0.05,
+        "top_p": 0.0
+      },
+      "localized_names": {
+        "en": "Confident",
+        "es": "Seguro",
+        "fr": "Confiant",
+        "de": "Zuversichtlich",
+        "it": "Sicuro",
+        "pt": "Confiante",
+        "zh": "自信",
+        "ja": "自信のある",
+        "ko": "자신감 있는",
+        "ru": "Уверенный"
+      }
+    },
+    "arrogant": {
+      "modifiers": {
+        "temp": 0.0,
+        "penalty": 0.0,
+        "top_p": -0.1
+      },
+      "localized_names": {
+        "en": "Arrogant",
+        "es": "Arrogante",
+        "fr": "Arrogant",
+        "de": "Arrogant",
+        "it": "Arrogante",
+        "pt": "Arrogante",
+        "zh": "傲慢",
+        "ja": "傲慢",
+        "ko": "오만한",
+        "ru": "Арогантный"
+      }
+    },
+    "smug": {
+      "modifiers": {
+        "temp": 0.05,
+        "penalty": 0.0,
+        "top_p": -0.05
+      },
+      "localized_names": {
+        "en": "Smug",
+        "es": "Presumido",
+        "fr": "Suffisant",
+        "de": "Selbstgefällig",
+        "it": "Compiaciuto",
+        "pt": "Presumido",
+        "zh": "沾沾自喜",
+        "ja": "どや顔",
+        "ko": "우쭐해하는",
+        "ru": "Самодовольный"
+      }
+    },
+    "insecure": {
+      "modifiers": {
+        "temp": 0.1,
+        "penalty": 0.1,
+        "top_p": 0.0
+      },
+      "localized_names": {
+        "en": "Insecure",
+        "es": "Inseguro",
+        "fr": "Incertain",
+        "de": "Unsicher",
+        "it": "Insicuro",
+        "pt": "Inseguro",
+        "zh": "自卑",
+        "ja": "不安定",
+        "ko": "불안정한",
+        "ru": "Неуверенный"
+      }
+    },
+    "hesitant": {
+      "modifiers": {
+        "temp": 0.15,
+        "penalty": 0.15,
+        "top_p": 0.0
+      },
+      "localized_names": {
+        "en": "Hesitant",
+        "es": "Vacilante",
+        "fr": "Hésitant",
+        "de": "Zögernd",
+        "it": "Esitante",
+        "pt": "Hesitante",
+        "zh": "犹豫",
+        "ja": "ためらう",
+        "ko": "망설이는",
+        "ru": "Колеблющийся"
+      }
+    },
+    "timid": {
+      "modifiers": {
+        "temp": -0.2,
+        "penalty": 0.1,
+        "top_p": -0.1
+      },
+      "localized_names": {
+        "en": "Timid",
+        "es": "Tímido",
+        "fr": "Timide",
+        "de": "Schüchtern",
+        "it": "Timido",
+        "pt": "Tímido",
+        "zh": "胆怯",
+        "ja": "臆病",
+        "ko": "소심한",
+        "ru": "Робкий"
+      }
+    },
+    "defeated": {
+      "modifiers": {
+        "temp": -0.25,
+        "penalty": -0.1,
+        "top_p": -0.1
+      },
+      "localized_names": {
+        "en": "Defeated",
+        "es": "Derrotado",
+        "fr": "Vaincu",
+        "de": "Besiegt",
+        "it": "Sconfitto",
+        "pt": "Derrotado",
+        "zh": "失败",
+        "ja": "敗北した",
+        "ko": "패배한",
+        "ru": "Побежденный"
+      }
+    },
+    "hopeless": {
+      "modifiers": {
+        "temp": -0.3,
+        "penalty": -0.15,
+        "top_p": -0.15
+      },
+      "localized_names": {
+        "en": "Hopeless",
+        "es": "Desesperado",
+        "fr": "Désespéré",
+        "de": "Hoffnungslos",
+        "it": "Disperato",
+        "pt": "Sem esperança",
+        "zh": "绝望",
+        "ja": "絶望的",
+        "ko": "절망적인",
+        "ru": "Безнадежный"
+      }
+    },
+    "excited": {
+      "modifiers": {
+        "temp": 0.4,
+        "penalty": 0.15,
+        "top_p": 0.1
+      },
+      "localized_names": {
+        "en": "Excited",
+        "es": "Emocionado",
+        "fr": "Excité",
+        "de": "Aufgeregt",
+        "it": "Ecitato",
+        "pt": "Emocionado",
+        "zh": "兴奋",
+        "ja": "興奮した",
+        "ko": "흥분한",
+        "ru": "Взволнованный"
+      }
+    },
+    "enthusiastic": {
+      "modifiers": {
+        "temp": 0.3,
+        "penalty": 0.1,
+        "top_p": 0.05
+      },
+      "localized_names": {
+        "en": "Enthusiastic",
+        "es": "Entusiasta",
+        "fr": "Enthousiaste",
+        "de": "Enthusiastisch",
+        "it": "Entusiasta",
+        "pt": "Entusiasta",
+        "zh": "热情",
+        "ja": "熱狂的",
+        "ko": "열정적인",
+        "ru": "Восторженный"
+      }
+    },
+    "energetic": {
+      "modifiers": {
+        "temp": 0.35,
+        "penalty": 0.15,
+        "top_p": 0.1
+      },
+      "localized_names": {
+        "en": "Energetic",
+        "es": "Enérgico",
+        "fr": "Énergique",
+        "de": "Energetisch",
+        "it": "Energico",
+        "pt": "Energético",
+        "zh": "精力充沛",
+        "ja": "エネルギッシュ",
+        "ko": "활기찬",
+        "ru": "Энергичный"
+      }
+    },
+    "bored": {
+      "modifiers": {
+        "temp": -0.2,
+        "penalty": -0.1,
+        "top_p": -0.1
+      },
+      "localized_names": {
+        "en": "Bored",
+        "es": "Aburrido",
+        "fr": "Ennuyé",
+        "de": "Gelangweilt",
+        "it": "Annoiato",
+        "pt": "Entediado",
+        "zh": "无聊",
+        "ja": "退屈した",
+        "ko": "지루한",
+        "ru": "Скучающий"
+      }
+    },
+    "tired": {
+      "modifiers": {
+        "temp": -0.25,
+        "penalty": -0.1,
+        "top_p": -0.1
+      },
+      "localized_names": {
+        "en": "Tired",
+        "es": "Cansado",
+        "fr": "Fatigué",
+        "de": "Müde",
+        "it": "Stanco",
+        "pt": "Cansado",
+        "zh": "疲倦",
+        "ja": "疲れた",
+        "ko": "피곤한",
+        "ru": "Усталый"
+      }
+    },
+    "exhausted": {
+      "modifiers": {
+        "temp": -0.3,
+        "penalty": -0.15,
+        "top_p": -0.15
+      },
+      "localized_names": {
+        "en": "Exhausted",
+        "es": "Agotado",
+        "fr": "Épuisé",
+        "de": "Erschöpft",
+        "it": "Esausto",
+        "pt": "Exausto",
+        "zh": "筋疲力尽",
+        "ja": "疲れ果てた",
+        "ko": "기진맥진한",
+        "ru": "Изнуренный"
+      }
+    },
+    "lethargic": {
+      "modifiers": {
+        "temp": -0.35,
+        "penalty": -0.15,
+        "top_p": -0.15
+      },
+      "localized_names": {
+        "en": "Lethargic",
+        "es": "Letárgico",
+        "fr": "Léthargique",
+        "de": "Lethargisch",
+        "it": "Letargico",
+        "pt": "Letárgico",
+        "zh": "昏昏欲睡",
+        "ja": "無気力",
+        "ko": "무기력한",
+        "ru": "Летаргический"
+      }
+    },
+    "calm": {
+      "modifiers": {
+        "temp": -0.3,
+        "penalty": -0.1,
+        "top_p": -0.15
+      },
+      "localized_names": {
+        "en": "Calm",
+        "es": "Calmado",
+        "fr": "Calme",
+        "de": "Ruhig",
+        "it": "Calmo",
+        "pt": "Calmo",
+        "zh": "冷静",
+        "ja": "穏やか",
+        "ko": "차분한",
+        "ru": "Спокойный"
+      }
+    },
+    "nervous": {
+      "modifiers": {
+        "temp": 0.2,
+        "penalty": 0.2,
+        "top_p": 0.05
+      },
+      "localized_names": {
+        "en": "Nervous",
+        "es": "Nervioso",
+        "fr": "Nerveux",
+        "de": "Nervös",
+        "it": "Nervoso",
+        "pt": "Nervoso",
+        "zh": "紧张",
+        "ja": "緊張した",
+        "ko": "긴장한",
+        "ru": "Нервный"
+      }
+    },
+    "panicked": {
+      "modifiers": {
+        "temp": 0.45,
+        "penalty": 0.25,
+        "top_p": 0.1
+      },
+      "localized_names": {
+        "en": "Panicked",
+        "es": "Aterrado",
+        "fr": "Paniqué",
+        "de": "Panisch",
+        "it": "In preda al panico",
+        "pt": "Em pânico",
+        "zh": "恐慌",
+        "ja": "パニック",
+        "ko": "당황한",
+        "ru": "Паникующий"
+      }
+    },
+    "frantic": {
+      "modifiers": {
+        "temp": 0.5,
+        "penalty": 0.3,
+        "top_p": 0.15
+      },
+      "localized_names": {
+        "en": "Frantic",
+        "es": "Frenético",
+        "fr": "Frénétique",
+        "de": "Fratisch",
+        "it": "Frenetico",
+        "pt": "Frenético",
+        "zh": "疯狂",
+        "ja": "熱狂的",
+        "ko": "정신없는",
+        "ru": "Безумный"
+      }
+    },
+    "stressed": {
+      "modifiers": {
+        "temp": 0.25,
+        "penalty": 0.15,
+        "top_p": 0.05
+      },
+      "localized_names": {
+        "en": "Stressed",
+        "es": "Estresado",
+        "fr": "Stressé",
+        "de": "Gestresst",
+        "it": "Stressato",
+        "pt": "Estressado",
+        "zh": "压力大",
+        "ja": "ストレス",
+        "ko": "스트레스 받는",
+        "ru": "В стрессе"
+      }
+    },
+    "overwhelmed": {
+      "modifiers": {
+        "temp": 0.3,
+        "penalty": 0.2,
+        "top_p": 0.05
+      },
+      "localized_names": {
+        "en": "Overwhelmed",
+        "es": "Abrumado",
+        "fr": "Submergé",
+        "de": "Überwältigt",
+        "it": "Sopraffatto",
+        "pt": "Sobrecarregado",
+        "zh": "不知所措",
+        "ja": "圧倒された",
+        "ko": "압도된",
+        "ru": "Ошеломленный"
+      }
+    },
+    "relaxed": {
+      "modifiers": {
+        "temp": -0.25,
+        "penalty": -0.1,
+        "top_p": -0.1
+      },
+      "localized_names": {
+        "en": "Relaxed",
+        "es": "Relajado",
+        "fr": "Détendu",
+        "de": "Entspannt",
+        "it": "Rilassato",
+        "pt": "Relaxado",
+        "zh": "放松",
+        "ja": "リラックス",
+        "ko": "편안한",
+        "ru": "Расслабленный"
+      }
+    },
+    "serene": {
+      "modifiers": {
+        "temp": -0.35,
+        "penalty": -0.15,
+        "top_p": -0.15
+      },
+      "localized_names": {
+        "en": "Serene",
+        "es": "Sereno",
+        "fr": "Serein",
+        "de": "Gelassen",
+        "it": "Sereno",
+        "pt": "Sereno",
+        "zh": "宁静",
+        "ja": "穏やか",
+        "ko": "평온한",
+        "ru": "Безмятежный"
+      }
+    },
+    "playful": {
+      "modifiers": {
+        "temp": 0.25,
+        "penalty": 0.1,
+        "top_p": 0.05
+      },
+      "localized_names": {
+        "en": "Playful",
+        "es": "Juguetón",
+        "fr": "Espiègle",
+        "de": "Verspielt",
+        "it": "Giocoso",
+        "pt": "Brincalhão",
+        "zh": "调皮",
+        "ja": "遊び心のある",
+        "ko": "장난스러운",
+        "ru": "Игривый"
+      }
+    },
+    "teasing": {
+      "modifiers": {
+        "temp": 0.2,
+        "penalty": 0.1,
+        "top_p": 0.05
+      },
+      "localized_names": {
+        "en": "Teasing",
+        "es": "Burlón",
+        "fr": "Moqueur",
+        "de": "Neckend",
+        "it": "Provocante",
+        "pt": "Zombeteiro",
+        "zh": "戏弄",
+        "ja": "からかう",
+        "ko": "놀리는",
+        "ru": "Дразнящий"
+      }
+    },
+    "flirtatious": {
+      "modifiers": {
+        "temp": 0.15,
+        "penalty": 0.05,
+        "top_p": 0.05
+      },
+      "localized_names": {
+        "en": "Flirtatious",
+        "es": "Coqueto",
+        "fr": "Flirteur",
+        "de": "Kokett",
+        "it": "Civettuolo",
+        "pt": "Flerte",
+        "zh": "调情",
+        "ja": "いちゃつく",
+        "ko": "교태를 부리는",
+        "ru": "Кокетливый"
+      }
+    },
+    "seductive": {
+      "modifiers": {
+        "temp": 0.1,
+        "penalty": 0.0,
+        "top_p": 0.0
+      },
+      "localized_names": {
+        "en": "Seductive",
+        "es": "Seductor",
+        "fr": "Séducteur",
+        "de": "Verführerisch",
+        "it": "Seducente",
+        "pt": "Seductor",
+        "zh": "诱人",
+        "ja": "魅惑的",
+        "ko": "유혹적인",
+        "ru": "Соблазнительный"
+      }
+    },
+    "mysterious": {
+      "modifiers": {
+        "temp": -0.1,
+        "penalty": 0.0,
+        "top_p": -0.05
+      },
+      "localized_names": {
+        "en": "Mysterious",
+        "es": "Misterioso",
+        "fr": "Mystérieux",
+        "de": "Geheimnisvoll",
+        "it": "Misterioso",
+        "pt": "Misterioso",
+        "zh": "神秘",
+        "ja": "神秘的",
+        "ko": "신비로운",
+        "ru": "Таинственный"
+      }
+    },
+    "ominous": {
+      "modifiers": {
+        "temp": -0.15,
+        "penalty": 0.05,
+        "top_p": -0.1
+      },
+      "localized_names": {
+        "en": "Ominous",
+        "es": "Ominoso",
+        "fr": "Sinistre",
+        "de": "Ominös",
+        "it": "Inquietante",
+        "pt": "Sinistro",
+        "zh": "不祥",
+        "ja": "不吉な",
+        "ko": "불길한",
+        "ru": "Зловещий"
+      }
+    },
+    "menacing": {
+      "modifiers": {
+        "temp": 0.1,
+        "penalty": 0.1,
+        "top_p": -0.05
+      },
+      "localized_names": {
+        "en": "Menacing",
+        "es": "Amenazante",
+        "fr": "Menaçant",
+        "de": "Bedrohlich",
+        "it": "Minaccioso",
+        "pt": "Ameaçador",
+        "zh": "威胁",
+        "ja": "脅威",
+        "ko": "위협적인",
+        "ru": "Угрожающий"
+      }
+    },
+    "threatening": {
+      "modifiers": {
+        "temp": 0.2,
+        "penalty": 0.15,
+        "top_p": 0.0
+      },
+      "localized_names": {
+        "en": "Threatening",
+        "es": "Amenazador",
+        "fr": "Menaçant",
+        "de": "Drohend",
+        "it": "Minaccioso",
+        "pt": "Ameaçador",
+        "zh": "威胁性",
+        "ja": "威嚇的な",
+        "ko": "협박하는",
+        "ru": "Угрожающий"
+      }
+    },
+    "suspicious": {
+      "modifiers": {
+        "temp": 0.1,
+        "penalty": 0.1,
+        "top_p": 0.0
+      },
+      "localized_names": {
+        "en": "Suspicious",
+        "es": "Desconfiado",
+        "fr": "Suspect",
+        "de": "Verdächtig",
+        "it": "Sospettoso",
+        "pt": "Suspeito",
+        "zh": "可疑",
+        "ja": "疑わしい",
+        "ko": "의심스러운",
+        "ru": "Подозрительный"
+      }
+    },
+    "paranoid": {
+      "modifiers": {
+        "temp": 0.25,
+        "penalty": 0.2,
+        "top_p": 0.05
+      },
+      "localized_names": {
+        "en": "Paranoid",
+        "es": "Paranoico",
+        "fr": "Paranoïaque",
+        "de": "Paranoid",
+        "it": "Paranoico",
+        "pt": "Paranoico",
+        "zh": "偏执",
+        "ja": "妄想的",
+        "ko": "편집증적인",
+        "ru": "Параноидальный"
+      }
+    },
+    "drunk": {
+      "modifiers": {
+        "temp": 0.4,
+        "penalty": 0.25,
+        "top_p": 0.1
+      },
+      "localized_names": {
+        "en": "Drunk",
+        "es": "Borracho",
+        "fr": "Ivre",
+        "de": "Betrunken",
+        "it": "Ubriaco",
+        "pt": "Bêbado",
+        "zh": "喝醉",
+        "ja": "酔った",
+        "ko": "취한",
+        "ru": "Пьяный"
+      }
+    },
+    "breathless": {
+      "modifiers": {
+        "temp": 0.3,
+        "penalty": 0.2,
+        "top_p": 0.1
+      },
+      "localized_names": {
+        "en": "Breathless",
+        "es": "Jadeante",
+        "fr": "Essoufflé",
+        "de": "Atemlos",
+        "it": "Senza fiato",
+        "pt": "Ofegante",
+        "zh": "气喘吁吁",
+        "ja": "息切れした",
+        "ko": "숨이 찬",
+        "ru": "Запыхавшийся"
+      }
+    },
+    "whispering": {
+      "modifiers": {
+        "temp": -0.2,
+        "penalty": -0.05,
+        "top_p": -0.1
+      },
+      "localized_names": {
+        "en": "Whispering",
+        "es": "Susurrante",
+        "fr": "Chuchotant",
+        "de": "Flüsternd",
+        "it": "Sussurrante",
+        "pt": "Sussurrante",
+        "zh": "耳语",
+        "ja": "ささやき",
+        "ko": "속삭이는",
+        "ru": "Шепчущий"
+      }
+    },
+    "shouting": {
+      "modifiers": {
+        "temp": 0.4,
+        "penalty": 0.2,
+        "top_p": 0.1
+      },
+      "localized_names": {
+        "en": "Shouting",
+        "es": "Gritando",
+        "fr": "Criant",
+        "de": "Schreiend",
+        "it": "Gridando",
+        "pt": "Gritando",
+        "zh": "呐喊",
+        "ja": "叫び",
+        "ko": "소리 지르는",
+        "ru": "Кричащий"
+      }
+    },
+    "in_pain": {
+      "modifiers": {
+        "temp": 0.3,
+        "penalty": 0.2,
+        "top_p": 0.05
+      },
+      "localized_names": {
+        "en": "In Pain",
+        "es": "Con Dolor",
+        "fr": "En Souffrance",
+        "de": "Schmerz",
+        "it": "Soffrente",
+        "pt": "Com dor",
+        "zh": "疼痛",
+        "ja": "苦痛",
+        "ko": "고통스러운",
+        "ru": "В боли"
+      }
+    },
+    "sick": {
+      "modifiers": {
+        "temp": -0.2,
+        "penalty": -0.05,
+        "top_p": -0.1
+      },
+      "localized_names": {
+        "en": "Sick",
+        "es": "Enfermo",
+        "fr": "Malade",
+        "de": "Krank",
+        "it": "Malato",
+        "pt": "Doente",
+        "zh": "生病",
+        "ja": "病気",
+        "ko": "아픈",
+        "ru": "Больной"
+      }
+    },
+    "bitter": {
+      "modifiers": {
+        "temp": 0.1,
+        "penalty": 0.05,
+        "top_p": -0.05
+      },
+      "localized_names": {
+        "en": "Bitter",
+        "es": "Amargo",
+        "fr": "Amer",
+        "de": "Bitter",
+        "it": "Amaro",
+        "pt": "Amargo",
+        "zh": "痛苦",
+        "ja": "苦い",
+        "ko": "비통한",
+        "ru": "Горький"
+      }
+    },
+    "manic": {
+      "modifiers": {
+        "temp": 0.5,
+        "penalty": 0.3,
+        "top_p": 0.15
+      },
+      "localized_names": {
+        "en": "Manic",
+        "es": "Maníaco",
+        "fr": "Maniaque",
+        "de": "Manisch",
+        "it": "Maniacale",
+        "pt": "Maníaco",
+        "zh": "躁狂",
+        "ja": "躁状態",
+        "ko": "조증의",
+        "ru": "Маниакальный"
+      }
+    },
+    "reluctant": {
+      "modifiers": {
+        "temp": -0.1,
+        "penalty": 0.05,
+        "top_p": -0.05
+      },
+      "localized_names": {
+        "en": "Reluctant",
+        "es": "Reacio",
+        "fr": "Réticent",
+        "de": "Widerwillig",
+        "it": "Riluttante",
+        "pt": "Relutante",
+        "zh": "不情愿",
+        "ja": "しぶしぶ",
+        "ko": "꺼려하는",
+        "ru": "Неохотный"
+      }
+    },
+    "desperate": {
+      "modifiers": {
+        "temp": 0.3,
+        "penalty": 0.2,
+        "top_p": 0.05
+      },
+      "localized_names": {
+        "en": "Desperate",
+        "es": "Desesperado",
+        "fr": "Désespéré",
+        "de": "Verzweifelt",
+        "it": "Disperato",
+        "pt": "Desesperado",
+        "zh": "绝望",
+        "ja": "必死",
+        "ko": "필사적인",
+        "ru": "Отчаянный"
+      }
+    },
+    "jealous": {
+      "modifiers": {
+        "temp": 0.2,
+        "penalty": 0.1,
+        "top_p": 0.0
+      },
+      "localized_names": {
+        "en": "Jealous",
+        "es": "Celoso",
+        "fr": "Jaloux",
+        "de": "Eifersüchtig",
+        "it": "Geloso",
+        "pt": "Ciumento",
+        "zh": "嫉妒",
+        "ja": "嫉妬",
+        "ko": "질투하는",
+        "ru": "Ревнивый"
+      }
+    },
+    "frustrated": {
+      "modifiers": {
+        "temp": 0.25,
+        "penalty": 0.1,
+        "top_p": 0.0
+      },
+      "localized_names": {
+        "en": "Frustrated",
+        "es": "Frustrado",
+        "fr": "Frustré",
+        "de": "Frustriert",
+        "it": "Frustrato",
+        "pt": "Frustrado",
+        "zh": "沮丧",
+        "ja": "フラストレーション",
+        "ko": "좌절한",
+        "ru": "Разочарованный"
+      }
+    },
+    "relieved": {
+      "modifiers": {
+        "temp": -0.15,
+        "penalty": -0.05,
+        "top_p": 0.0
+      },
+      "localized_names": {
+        "en": "Relieved",
+        "es": "Aliviado",
+        "fr": "Soulagé",
+        "de": "Erleichtert",
+        "it": "Sollevato",
+        "pt": "Aliviado",
+        "zh": "宽慰",
+        "ja": "安心した",
+        "ko": "안도하는",
+        "ru": "Облегченный"
+      }
+    },
+    "guilty": {
+      "modifiers": {
+        "temp": -0.1,
+        "penalty": 0.05,
+        "top_p": -0.05
+      },
+      "localized_names": {
+        "en": "Guilty",
+        "es": "Culpable",
+        "fr": "Coupable",
+        "de": "Schuldig",
+        "it": "Colpevole",
+        "pt": "Culpado",
+        "zh": "内疚",
+        "ja": "内疚",
+        "ko": "죄책감을 느끼는",
+        "ru": "Виноватый"
+      }
+    },
+    "ashamed": {
+      "modifiers": {
+        "temp": -0.2,
+        "penalty": -0.05,
+        "top_p": -0.1
+      },
+      "localized_names": {
+        "en": "Ashamed",
+        "es": "Avergonzado",
+        "fr": "Honteux",
+        "de": "Beschämt",
+        "it": "Vergognoso",
+        "pt": "Envergonhado",
+        "zh": "羞愧",
+        "ja": "恥ずかしい",
+        "ko": "부끄러워하는",
+        "ru": "Пристыженный"
+      }
+    },
+    "proud": {
+      "modifiers": {
+        "temp": 0.0,
+        "penalty": 0.0,
+        "top_p": 0.0
+      },
+      "localized_names": {
+        "en": "Proud",
+        "es": "Orgulloso",
+        "fr": "Fier",
+        "de": "Stolz",
+        "it": "Orgoglioso",
+        "pt": "Orgulhoso",
+        "zh": "自豪",
+        "ja": "誇らしい",
+        "ko": "자랑스러운",
+        "ru": "Гордый"
+      }
+    },
+    "vengeful": {
+      "modifiers": {
+        "temp": 0.3,
+        "penalty": 0.15,
+        "top_p": 0.05
+      },
+      "localized_names": {
+        "en": "Vengeful",
+        "es": "Vengativo",
+        "fr": "Vengeur",
+        "de": "Rachsüchtig",
+        "it": "Vendicativo",
+        "pt": "Vingativo",
+        "zh": "报复心强",
+        "ja": "復讐心に燃えた",
+        "ko": "복수심에 불타는",
+        "ru": "Мстительный"
+      }
+    },
+    "remorseful": {
+      "modifiers": {
+        "temp": -0.15,
+        "penalty": -0.05,
+        "top_p": -0.05
+      },
+      "localized_names": {
+        "en": "Remorseful",
+        "es": "Arrepentido",
+        "fr": "Repentant",
+        "de": "Reuevoll",
+        "it": "Pentito",
+        "pt": "Remorso",
+        "zh": "悔恨",
+        "ja": "後悔している",
+        "ko": "후회하는",
+        "ru": "Раскаивающийся"
+      }
+    }
+  }
+}

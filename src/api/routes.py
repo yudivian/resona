@@ -1,9 +1,11 @@
 import os
 import io
 import logging
-from typing import List, Optional, Any
+import uuid
+from typing import List, Optional, Any, Dict
 from fastapi import APIRouter, HTTPException, Query, Depends
 from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
+from fastapi import BackgroundTasks 
 
 from src.models import (
     VoiceSummary,
@@ -11,7 +13,11 @@ from src.models import (
     VoiceEndpoints,
     EmotionSummary,
     IntensifierSummary,
+    TaskStatusResponse,
+    SynthesisRequest, 
+    EmotionSynthesisRequest
 )
+
 from src.backend.store import VoiceStore
 from src.backend.io import VoiceBundleIO
 from src.api.dependencies import (
@@ -19,13 +25,60 @@ from src.api.dependencies import (
     get_embed_engine,
     get_config,
     get_emotion_manager,
+    get_tts_provider
 )
 from src.emotions.manager import EmotionManager
+from src.backend.engine import InferenceEngine
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# --- DISCOVERY & SEARCH ENDPOINTS ---
+ACTIVE_TASKS: Dict[str, Dict[str, Any]] = {}
+
+def _process_synthesis_task(
+    task_id: str,
+    voice_id: str,
+    text: str,
+    lang: str,
+    params: Optional[Dict[str, float]],
+    store: VoiceStore,
+    config: Any,
+    provider: Any
+):
+    """
+    Background worker that performs the actual neural inference.
+    Updates the global ACTIVE_TASKS dictionary with the results.
+    """
+    try:
+        profile = store.get_profile(voice_id)
+        if not profile:
+            raise Exception(f"Voice profile {voice_id} not found.")
+
+        engine = InferenceEngine(config, provider, lang=lang)
+        anchor = os.path.join(config.paths.assets_dir, profile.anchor_audio_path) if profile.anchor_audio_path else None
+        engine.load_identity_from_state(profile.identity_embedding, profile.seed, anchor)
+
+        output_name = f"api_{task_id}.wav"
+        output_path = os.path.join(config.paths.emotionspace_dir, "temp", output_name)
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+        if params:
+            final_path = engine.render_with_emotion(text, params, output_path)
+        else:
+            final_path = engine.render(text, output_path)
+
+        ACTIVE_TASKS[task_id].update({
+            "status": "completed",
+            "file_path": final_path
+        })
+        logger.info(f"✅ Task {task_id} completed successfully.")
+
+    except Exception as e:
+        logger.error(f"❌ Task {task_id} failed: {e}")
+        ACTIVE_TASKS[task_id].update({
+            "status": "failed",
+            "error": str(e)
+        })
 
 
 @router.get("/voices", response_model=List[VoiceSummary])
@@ -450,3 +503,116 @@ def get_intensifier(
         name=vocab.get(intensifier_id, intensifier_id),
         multiplier=intensifier_data.get("multiplier", 1.0)
     )
+    
+@router.get("/tasks/{task_id}", response_model=TaskStatusResponse)
+def get_task_status(task_id: str):
+    """
+    Consults the current state of a synthesis job.
+    
+    The client should poll this endpoint until status is 'completed' or 'failed'.
+    """
+    task = ACTIVE_TASKS.get(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task ID not found.")
+        
+    download_url = f"/v1/tasks/{task_id}/audio" if task["status"] == "completed" else None
+    
+    return TaskStatusResponse(
+        task_id=task_id,
+        status=task["status"],
+        download_url=download_url,
+        error=task.get("error")
+    )
+
+
+@router.get("/tasks/{task_id}/audio")
+def download_task_audio(
+    task_id: str, 
+    background_tasks: BackgroundTasks
+):
+    """
+    Streams the generated audio file and triggers an automatic cleanup.
+    
+    Architectural Note:
+    Once the stream is finished, a BackgroundTask is triggered to delete 
+    the temporary file from the disk, ensuring the server remains stateless.
+    """
+    task = ACTIVE_TASKS.get(task_id)
+    if not task or task["status"] != "completed":
+        raise HTTPException(status_code=404, detail="Audio not ready or task not found.")
+
+    file_path = task.get("file_path")
+    if not file_path or not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Physical audio file missing on server.")
+
+    background_tasks.add_task(os.remove, file_path)
+
+    return FileResponse(file_path, media_type="audio/wav")
+
+@router.post("/voices/{voice_id}/synthesize", status_code=202)
+async def enqueue_standard_synthesis(
+    voice_id: str,
+    request: SynthesisRequest,
+    background_tasks: BackgroundTasks,
+    store: VoiceStore = Depends(get_store),
+    config = Depends(get_config),
+    provider = Depends(get_tts_provider)
+):
+    """
+    Enqueues a standard text-to-speech task.
+    Returns a task_id for polling.
+    """
+    if not provider:
+        raise HTTPException(status_code=503, detail="TTS Engine is not initialized.")
+        
+    profile = store.get_profile(voice_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Voice not found.")
+
+    task_id = str(uuid.uuid4())
+    ACTIVE_TASKS[task_id] = {"status": "pending", "file_path": None}
+    
+    target_lang = request.language or profile.language
+    
+    background_tasks.add_task(
+        _process_synthesis_task, 
+        task_id, voice_id, request.text, target_lang, None, store, config, provider
+    )
+    
+    return {"task_id": task_id, "status": "pending"}
+
+
+@router.post("/voices/{voice_id}/synthesize/emotion", status_code=202)
+async def enqueue_emotional_synthesis(
+    voice_id: str,
+    request: EmotionSynthesisRequest,
+    background_tasks: BackgroundTasks,
+    store: VoiceStore = Depends(get_store),
+    manager: EmotionManager = Depends(get_emotion_manager),
+    config = Depends(get_config),
+    provider = Depends(get_tts_provider)
+):
+    """
+    Enqueues an emotional prosody synthesis task.
+    Scales model parameters based on the requested emotion and intensifier.
+    """
+    if not provider:
+        raise HTTPException(status_code=503, detail="TTS Engine is not initialized.")
+        
+    profile = store.get_profile(voice_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Voice not found.")
+
+    params = manager.calculate_parameters(request.emotion_id, request.intensifier_id)
+    
+    task_id = str(uuid.uuid4())
+    ACTIVE_TASKS[task_id] = {"status": "pending", "file_path": None}
+    
+    target_lang = request.language or profile.language
+
+    background_tasks.add_task(
+        _process_synthesis_task, 
+        task_id, voice_id, request.text, target_lang, params, store, config, provider
+    )
+    
+    return {"task_id": task_id, "status": "pending"}

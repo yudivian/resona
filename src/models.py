@@ -31,6 +31,7 @@ class PathsConfig(BaseModel):
     tunespace_dir: str
     emotionspace_dir: str
     apispace_dir: str
+    dialogspace_dir: str
 
 class FineTuneConfig(BaseModel):
     """
@@ -226,3 +227,91 @@ class TaskStatusResponse(BaseModel):
     status: str
     download_url: Optional[str] = None
     error: Optional[str] = None
+
+
+
+class ProjectStatus(str, Enum):
+    """
+    Lifecycle states of a dialog orchestration process.
+    """
+    IDLE = "idle"
+    STARTING = "starting"
+    GENERATING = "generating"
+    PAUSED = "paused"
+    CANCELLING = "cancelling"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+class LineStatus(str, Enum):
+    """
+    Execution states for an individual dialog line.
+    """
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    
+class ProjectSource(str, Enum):
+    """
+    Identifies the origin of the project to isolate UI workspaces from ephemeral API requests.
+    """
+    UI = "ui"
+    API = "api"
+class DialogLine(BaseModel):
+    """
+    Creative definition of a single script intervention.
+    """
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    index: int
+    speaker_name: Optional[str] = None
+    voice_id: str
+    text: str = Field(..., min_length=1)
+    language: Optional[str] = None
+    emotion: Optional[str] = None
+    intensity: Optional[str] = None
+
+class DialogScript(BaseModel):
+    """
+    Pure script definition for import and export operations.
+    """
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    name: str
+    description: Optional[str] = None
+    tags: List[str] = Field(default_factory=list)
+    default_language: str = "es"
+    created_at: float = Field(default_factory=time.time)
+    script: List[DialogLine]
+
+class LineState(BaseModel):
+    """
+    Technical state and tracking for a specific script line.
+    """
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    line_id: str
+    index: int
+    status: LineStatus = LineStatus.PENDING
+    emotion_id: Optional[str] = None
+    intensity_id: Optional[str] = None
+    audio_path: Optional[str] = None
+    error: Optional[str] = None
+
+class DialogProject(BaseModel):
+    """
+    Server-side project container for dialog generation.
+    """
+    model_config = ConfigDict(extra="ignore", use_enum_values=True)
+    
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    source: ProjectSource = ProjectSource.UI
+    
+    definition: DialogScript
+    states: List[LineState]
+    
+    status: ProjectStatus = ProjectStatus.IDLE
+    pid: Optional[int] = None
+    
+    project_path: str
+    created_at: float = Field(default_factory=time.time)
+    updated_at: float = Field(default_factory=time.time)
+    
+

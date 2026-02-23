@@ -27,6 +27,7 @@ class ResonaConfig:
             os.makedirs(config.paths.temp_dir, exist_ok=True)
             os.makedirs(config.paths.tunespace_dir, exist_ok=True)
             os.makedirs(config.paths.emotionspace_dir, exist_ok=True)
+            os.makedirs(config.paths.dialogspace_dir, exist_ok=True)
             
             api_temp_path = Path(config.paths.apispace_dir) / "temp"
             os.makedirs(api_temp_path, exist_ok=True)

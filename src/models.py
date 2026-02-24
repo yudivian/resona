@@ -238,7 +238,7 @@ class ProjectStatus(str, Enum):
     STARTING = "starting"
     GENERATING = "generating"
     PAUSED = "paused"
-    CANCELLING = "cancelling"
+    CANCELLED = "cancelled"
     COMPLETED = "completed"
     FAILED = "failed"
 

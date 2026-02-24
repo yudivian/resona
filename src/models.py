@@ -299,7 +299,6 @@ class DialogProject(BaseModel):
     """
     Server-side project container for dialog generation.
     """
-    model_config = ConfigDict(extra="ignore", use_enum_values=True)
     
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     source: ProjectSource = ProjectSource.UI

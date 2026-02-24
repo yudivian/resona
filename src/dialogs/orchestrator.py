@@ -2,126 +2,194 @@ import subprocess
 import os
 import sys
 import psutil
-from typing import Optional
+import shutil
+import time
+from pathlib import Path
+from typing import Optional, Dict, Any
 from beaver import BeaverDB
 
 from src.config import settings
-from src.models import DialogProject, ProjectStatus
+from src.models import DialogProject, ProjectStatus, LineStatus
 
 class DialogOrchestrator:
     """
     Service responsible for the lifecycle management and supervision of detached 
     background synthesis processes.
 
-    The orchestrator acts as the authoritative bridge between the user interface 
-    and the operating system's process scheduler. It ensures that synthesis workloads 
-    are launched in complete isolation (preventing API blocking) while maintaining 
-    deterministic tracking of their execution health via process IDs (PIDs) and 
-    the shared BeaverDB state.
+    The orchestrator functions entirely through transient queries and implements 
+    absolute process detachment. It severs all OS-level file descriptors, streams, 
+    and session groups between the parent web framework and the child AI worker, 
+    routing standard output to physical files to ensure zero cross-process contention.
     """
 
     def __init__(self) -> None:
         """
-        Initializes the DialogOrchestrator and establishes a connection to the 
-        persistent state database.
+        Initializes the DialogOrchestrator architecture utilizing stateless operations.
         """
-        self.db: BeaverDB = BeaverDB(settings.paths.db_file)
-        self.projects_dict: dict = self.db.dict("dialog_projects")
+        pass
+
+    def get_project_data_safe(self, project_id: str, retries: int = 10) -> Optional[Dict[str, Any]]:
+        """
+        Query implementation designed to extract project payloads utilizing transient 
+        SQLite bindings protected by iteration fallbacks.
+
+        Args:
+            project_id (str): The target identifier mapped to the payload.
+            retries (int, optional): Evaluation cap for access retries. Defaults to 10.
+
+        Returns:
+            Optional[Dict[str, Any]]: The parsed mapping dict, or None if extraction fails.
+        """
+        for i in range(retries):
+            try:
+                db = BeaverDB(settings.paths.db_file)
+                data = db.dict("dialog_projects").get(project_id)
+                return data
+            except Exception:
+                if i < retries - 1:
+                    time.sleep(0.25)
+                    continue
+        return None
+
+    def _write_project_data_safe(self, project_id: str, data: Dict[str, Any], retries: int = 10) -> bool:
+        """
+        Commits structural mutations to the database without retaining file hooks.
+
+        Args:
+            project_id (str): The persistent UUID identifier array key.
+            data (Dict[str, Any]): The structured metadata corresponding to the target project.
+            retries (int, optional): The fallback evaluation threshold. Defaults to 10.
+
+        Returns:
+            bool: True if the atomic operation succeeds cleanly, False upon absolute iteration failure.
+        """
+        for i in range(retries):
+            try:
+                db = BeaverDB(settings.paths.db_file)
+                db.dict("dialog_projects")[project_id] = data
+                return True
+            except Exception:
+                if i < retries - 1:
+                    time.sleep(0.25)
+                    continue
+        return False
+
+    def _delete_project_data_safe(self, project_id: str, retries: int = 10) -> bool:
+        """
+        Purges precise object branches mapped in the storage backend.
+
+        Args:
+            project_id (str): The primary identifier marking the node for deletion.
+            retries (int, optional): The upper iteration limit. Defaults to 10.
+
+        Returns:
+            bool: True mapping a successful deletion confirmation, False otherwise.
+        """
+        for i in range(retries):
+            try:
+                db = BeaverDB(settings.paths.db_file)
+                projects = db.dict("dialog_projects")
+                if project_id in projects:
+                    del projects[project_id]
+                return True
+            except Exception:
+                if i < retries - 1:
+                    time.sleep(0.25)
+                    continue
+        return False
 
     def start_generation(self, project_id: str) -> bool:
         """
-        Deploys a new detached background worker to process the specified dialog project.
+        Orchestrates the deployment of the background worker module utilizing absolute 
+        process detachment.
 
-        This method configures an isolated execution environment, ensuring the Python 
-        path is correctly inherited. It launches the worker script as a fully detached 
-        process group, capturing its PID immediately upon creation. If a healthy process 
-        is already actively generating the project, the launch is safely bypassed.
+        Forces complete closure of inherited file descriptors and establishes a new 
+        OS session group. I/O streams are strictly routed to physical disk allocations 
+        to guarantee the web framework cannot throttle the inference engine logs.
 
         Args:
-            project_id (str): The unique identifier of the target project to synthesize.
+            project_id (str): The designated UUID string corresponding to the synthesis request.
 
         Returns:
-            bool: True if a worker was successfully deployed or is already running natively.
-                  False if the project payload could not be located in the database.
+            bool: True validating immediate subprocess initiation, False if targeting a non-existent state.
         """
-        data: Optional[dict] = self.projects_dict.get(project_id)
+        data = self.get_project_data_safe(project_id)
         if not data:
             return False
             
-        project: DialogProject = DialogProject(**data)
+        project = DialogProject(**data)
+        current_status = str(project.status).lower()
 
-        if project.status in [ProjectStatus.STARTING, ProjectStatus.GENERATING]:
+        if current_status in [ProjectStatus.STARTING.value, ProjectStatus.GENERATING.value, "starting", "generating"]:
             if project.pid and self._is_pid_alive(project.pid):
                 return True
 
-        worker_script: str = os.path.abspath(os.path.join("src", "dialogs", "worker.py"))
-        python_exe: str = sys.executable
+        worker_script = os.path.abspath(os.path.join("src", "dialogs", "worker.py"))
+        python_exe = sys.executable
         
         env = os.environ.copy()
         env["PYTHONPATH"] = os.getcwd()
 
-        kwargs: dict = {"env": env}
+        kwargs: Dict[str, Any] = {"env": env}
         if os.name == 'nt':
-            kwargs['creationflags'] = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
+            kwargs['creationflags'] = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
         else:
             kwargs['start_new_session'] = True
 
+        log_path = os.path.abspath("worker_sys.log")
+        log_file = open(log_path, "a")
+
         process = subprocess.Popen(
             [python_exe, worker_script, project_id],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
             close_fds=True,
             **kwargs
         )
 
         project.pid = process.pid
         project.status = ProjectStatus.STARTING
-        self.projects_dict[project_id] = project.model_dump()
+        self._write_project_data_safe(project_id, project.model_dump())
         
         return True
 
     def sync_status(self, project_id: str) -> Optional[DialogProject]:
         """
-        Synchronizes the logical database state of a project with the physical reality 
-        of the operating system's process table.
-
-        If the database asserts that a project is actively generating, but the underlying 
-        process PID is dead, missing, or in a zombie state, this method performs auto-healing 
-        by permanently marking the project as FAILED, thus preventing infinite UI loading states.
+        Validates internal OS mappings verifying whether designated execution PIDs 
+        are actively processing iterations.
 
         Args:
-            project_id (str): The unique identifier of the project to synchronize.
+            project_id (str): Evaluated targeting identifier for the database schema.
 
         Returns:
-            Optional[DialogProject]: The updated project instance, or None if it does not exist.
+            Optional[DialogProject]: Structured model schema mirroring the verified external system state.
         """
-        data: Optional[dict] = self.projects_dict.get(project_id)
+        data = self.get_project_data_safe(project_id)
         if not data:
             return None
         
-        project: DialogProject = DialogProject(**data)
+        project = DialogProject(**data)
+        current_status = str(project.status).lower()
         
-        if project.status in [ProjectStatus.STARTING, ProjectStatus.GENERATING]:
+        if current_status in [ProjectStatus.STARTING.value, ProjectStatus.GENERATING.value, "starting", "generating"]:
             if not self._is_pid_alive(project.pid):
                 project.status = ProjectStatus.FAILED
-                data['status'] = ProjectStatus.FAILED
-                self.projects_dict[project_id] = data
+                data['status'] = ProjectStatus.FAILED.value
+                data['error'] = "Worker process died unexpectedly without saving state."
+                self._write_project_data_safe(project_id, data)
         
         return project
 
     def _is_pid_alive(self, pid: Optional[int]) -> bool:
         """
-        Interrogates the operating system kernel to determine the true health of a process.
-
-        Unlike naive existence checks, this method strictly validates that the process 
-        is not only present in the process table but is actively running and has not 
-        degraded into a Zombie state following an unreported crash or termination.
+        Determines execution viability interacting directly with kernel resource assignments.
 
         Args:
-            pid (Optional[int]): The process identifier to investigate.
+            pid (Optional[int]): The assigned kernel identifier pointing to the active execution cluster.
 
         Returns:
-            bool: True if the process is physically alive and healthy, False otherwise.
+            bool: True ensuring system availability and continuous processing capacity, False otherwise.
         """
         if pid is None:
             return False
@@ -134,59 +202,42 @@ class DialogOrchestrator:
         
     def pause_generation(self, project_id: str) -> bool:
         """
-        Suspends the active dialog generation process gracefully.
-
-        This method signals the background worker to halt execution by transitioning
-        the project's global state to a paused status. It relies on the worker's
-        internal state-checking mechanism between cluster inference cycles to release
-        GPU resources and terminate its process safely, ensuring no data corruption
-        occurs in partially generated audio files.
+        Enacts graceful execution cessation by modifying persistent pipeline directives.
 
         Args:
-            project_id (str): The unique identifier of the dialog project.
+            project_id (str): Targets the precise project map evaluating execution halt directives.
 
         Returns:
-            bool: True if the state was successfully transitioned to paused,
-                  False if the project was not found or was not in an active state.
+            bool: True detailing valid metadata injection of pause states, False otherwise.
         """
-        data = self.projects_dict.get(project_id)
+        data = self.get_project_data_safe(project_id)
         if not data:
             return False
 
-        current_status = data.get('status')
+        current_status = str(data.get('status', '')).lower()
         if current_status in [ProjectStatus.STARTING.value, ProjectStatus.GENERATING.value, "starting", "generating"]:
             data['status'] = ProjectStatus.PAUSED.value
-            self.projects_dict[project_id] = data
-            return True
+            return self._write_project_data_safe(project_id, data)
             
         return False
 
     def cancel_generation(self, project_id: str) -> bool:
         """
-        Terminates the active generation process and performs a complete project reset.
-
-        This method enforces a hard stop on the background worker by setting the
-        project status to cancelled. It implements an active wait mechanism to allow
-        the worker to perform graceful resource deallocation (e.g., VRAM flushing).
-        If the worker fails to terminate within the designated timeout window, it
-        escalates to an operating system-level process termination to prevent zombie
-        processes. Subsequently, it resets all internal line states, clears audio
-        path references, and physically purges the associated audio directory to
-        restore the project to its pristine initial state.
+        Forces ungraceful termination upon active process threads mapping designated project limits, 
+        additionally forcing filesystem deletions for derived asset arrays.
 
         Args:
-            project_id (str): The unique identifier of the dialog project.
+            project_id (str): Identifier targeting both logical mapping nodes and OS file allocations.
 
         Returns:
-            bool: True if the project was successfully cancelled and purged,
-                  False if the project identifier could not be located.
+            bool: True upon full termination sequences clearing validation, False otherwise.
         """
-        data = self.projects_dict.get(project_id)
+        data = self.get_project_data_safe(project_id)
         if not data:
             return False
 
         data['status'] = ProjectStatus.CANCELLED.value
-        self.projects_dict[project_id] = data
+        self._write_project_data_safe(project_id, data)
 
         pid = data.get('pid')
         if pid and self._is_pid_alive(pid):
@@ -204,7 +255,9 @@ class DialogOrchestrator:
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     pass
 
-        data = self.projects_dict.get(project_id)
+        data = self.get_project_data_safe(project_id)
+        if not data:
+            return False
 
         for state in data.get('states', []):
             state['status'] = LineStatus.PENDING.value
@@ -212,10 +265,10 @@ class DialogOrchestrator:
             state['error'] = None
         
         data['pid'] = None
-        data['status'] = ProjectStatus.PENDING.value
-        self.projects_dict[project_id] = data
+        data['status'] = ProjectStatus.IDLE.value 
+        self._write_project_data_safe(project_id, data)
 
-        audio_dir = Path(data.get('project_path')) / "audio"
+        audio_dir = Path(data.get('project_path', '')) / "audio"
         if audio_dir.exists():
             shutil.rmtree(audio_dir, ignore_errors=True)
             audio_dir.mkdir(parents=True, exist_ok=True)
@@ -224,19 +277,14 @@ class DialogOrchestrator:
 
     def restart_generation(self, project_id: str) -> bool:
         """
-        Executes a complete lifecycle reset and subsequently restarts generation.
-
-        This composite method strictly chains the cancellation and starting protocols.
-        It guarantees that any residual artifacts, compromised states, or active
-        subprocesses are entirely eradicated before spawning a fresh background
-        worker, providing a clean execution environment for the project.
+        Triggers aggregate cleanup pipelines mapping cancel parameters prior to enacting 
+        native launch procedures.
 
         Args:
-            project_id (str): The unique identifier of the dialog project.
+            project_id (str): Core canonical sequence mapping.
 
         Returns:
-            bool: True if the project was successfully reset and restarted,
-                  False if the initialization sequence failed at any stage.
+            bool: True detailing sequential operational confirmation, False otherwise.
         """
         if self.cancel_generation(project_id):
             return self.start_generation(project_id)
@@ -244,22 +292,16 @@ class DialogOrchestrator:
 
     def delete_project(self, project_id: str) -> bool:
         """
-        Eradicates the project entirely from both the storage backend and filesystem.
-
-        This method serves as the final destructor for a dialog project. It intercepts
-        and terminates any active background workers associated with the project PID
-        to ensure no file handles remain locked. It then recursively purges the entire
-        project directory from the local filesystem and deletes the project's state
-        record from the persistent database.
+        Initiates final destruction algorithms terminating relevant subprocesses before 
+        annihilating both directory bindings and database logical maps.
 
         Args:
-            project_id (str): The unique identifier of the dialog project.
+            project_id (str): Global identifier pointing to the data scope boundaries.
 
         Returns:
-            bool: True if the project was successfully deleted, False if the
-                  project did not exist within the database.
+            bool: True detailing system-wide project map erasure, False otherwise.
         """
-        data = self.projects_dict.get(project_id)
+        data = self.get_project_data_safe(project_id)
         if not data:
             return False
             
@@ -270,9 +312,38 @@ class DialogOrchestrator:
             except Exception:
                 pass
                 
-        project_path = Path(data.get("project_path"))
+        project_path = Path(data.get("project_path", ""))
         if project_path.exists():
             shutil.rmtree(project_path, ignore_errors=True)
             
-        del self.projects_dict[project_id]
+        return self._delete_project_data_safe(project_id)
+    
+    def purge_project_assets(self, project_id: str) -> bool:
+        """
+        Annuls designated operational processes and clears filesystem derivations without 
+        altering persistent schema attributes related to the root project map.
+
+        Args:
+            project_id (str): Core target mapping.
+
+        Returns:
+            bool: True highlighting successful directory purges, False corresponding to errors.
+        """
+        data = self.get_project_data_safe(project_id)
+        if not data:
+            return False
+            
+        pid = data.get("pid")
+        if pid and self._is_pid_alive(pid):
+            try:
+                psutil.Process(pid).terminate()
+            except Exception:
+                pass
+                
+        project_path = Path(data.get("project_path", ""))
+        audio_dir = project_path / "audio"
+        
+        if audio_dir.exists():
+            shutil.rmtree(audio_dir, ignore_errors=True)
+            
         return True

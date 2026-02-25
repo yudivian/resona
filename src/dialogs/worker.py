@@ -142,28 +142,9 @@ class DialogWorker:
     def _get_emotion_params(self, emotion_id: str, intensity_id: Optional[str]) -> Dict[str, float]:
         """
         Derives discrete numerical inference boundaries directly mapped to the 
-        canonical semantic emotion identifiers.
-
-        Args:
-            emotion_id (str): The primary emotion categorization key.
-            intensity_id (Optional[str]): The supplementary magnitude multiplier mapping.
-
-        Returns:
-            Dict[str, float]: The computed dictionary housing thermal parameters and penalties.
+        canonical semantic emotion identifiers by delegating to EmotionManager.
         """
-        catalog = self.emotion_manager.catalog
-        emotion_data = catalog.get("emotions", {}).get(emotion_id, {})
-        params = emotion_data.get("parameters", {"temp": 0.5, "top_p": 0.85, "penalty": 1.0})
-        
-        if intensity_id:
-            intensity_data = catalog.get("intensifiers", {}).get(intensity_id, {})
-            mods = intensity_data.get("modifiers", {"temp": 1.0, "top_p": 1.0, "penalty": 1.0})
-            params = {
-                "temp": params.get("temp", 0.5) * mods.get("temp", 1.0),
-                "top_p": params.get("top_p", 0.85) * mods.get("top_p", 1.0),
-                "penalty": params.get("penalty", 1.0) * mods.get("penalty", 1.0)
-            }
-        return params
+        return self.emotion_manager.calculate_parameters(emotion_id, intensity_id)
 
     def run(self) -> None:
         """

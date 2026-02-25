@@ -82,14 +82,22 @@ CALIBRATION_TEXTS = {
         "когда увидели путешественника, закутанного в плотный плащ. "
         "Они договорились, что победит тот, кто первым "
         "заставит путешественника снять этот плащ."
-    )
+    ),
 }
 
 LANGUAGE_MAP = {
-    "en": "English", "es": "Spanish", "fr": "French", "de": "German",
-    "it": "Italian", "pt": "Portuguese", "zh": "Chinese", "ja": "Japanese",
-    "ko": "Korean", "ru": "Russian"
+    "en": "English",
+    "es": "Spanish",
+    "fr": "French",
+    "de": "German",
+    "it": "Italian",
+    "pt": "Portuguese",
+    "zh": "Chinese",
+    "ja": "Japanese",
+    "ko": "Korean",
+    "ru": "Russian",
 }
+
 
 def set_global_seed(seed: int):
     """
@@ -106,10 +114,12 @@ def set_global_seed(seed: int):
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
 
+
 class TTSModelProvider:
     """
     Singleton resource manager for the TTS models.
     """
+
     _creator_model = None
     _synthesis_model = None
 
@@ -122,7 +132,11 @@ class TTSModelProvider:
         """
         self.config = config
         self.device = config.system.compute.tts_device
-        self.precision = torch.bfloat16 if config.system.compute.precision == "bf16" else torch.float16
+        self.precision = (
+            torch.bfloat16
+            if config.system.compute.precision == "bf16"
+            else torch.float16
+        )
 
     def _prepare_vram(self):
         """
@@ -144,8 +158,8 @@ class TTSModelProvider:
     #         repo = self.config.models.tts.design_repo_id
     #         logger.info(f"Loading Creator Model (1.7B) from {repo}...")
     #         TTSModelProvider._creator_model = Qwen3TTSModel.from_pretrained(
-    #             repo, 
-    #             device_map=self.device, 
+    #             repo,
+    #             device_map=self.device,
     #             torch_dtype=self.precision,
     #             attn_implementation="flash_attention_2"
     #         )
@@ -163,17 +177,17 @@ class TTSModelProvider:
     #         repo = self.config.models.tts.base_repo_id
     #         logger.info(f"Loading Synthesis Model (0.6B) from {repo}...")
     #         TTSModelProvider._synthesis_model = Qwen3TTSModel.from_pretrained(
-    #             repo, 
-    #             device_map=self.device, 
+    #             repo,
+    #             device_map=self.device,
     #             torch_dtype=self.precision,
     #             attn_implementation="flash_attention_2"
     #         )
     #     return TTSModelProvider._synthesis_model
-    
+
     def _get_local_path(self, repo_id: str) -> str:
         """
-        Resolves a Hugging Face Hub repository ID to its absolute physical path 
-        on the local filesystem. This prevents the underlying Transformers library 
+        Resolves a Hugging Face Hub repository ID to its absolute physical path
+        on the local filesystem. This prevents the underlying Transformers library
         from attempting any network resolution for custom code files.
 
         Args:
@@ -185,7 +199,9 @@ class TTSModelProvider:
         try:
             return snapshot_download(repo_id=repo_id, local_files_only=True)
         except Exception as e:
-            logger.error(f"Failed to resolve physical path for {repo_id}. Ensure the model is cached.")
+            logger.error(
+                f"Failed to resolve physical path for {repo_id}. Ensure the model is cached."
+            )
             raise e
 
     def get_creator_model(self) -> Qwen3TTSModel:
@@ -196,14 +212,16 @@ class TTSModelProvider:
             self._prepare_vram()
             repo = self.config.models.tts.design_repo_id
             local_path = self._get_local_path(repo)
-            
-            logger.info(f"Loading Creator Model (1.7B) directly from physical path: {local_path}")
+
+            logger.info(
+                f"Loading Creator Model (1.7B) directly from physical path: {local_path}"
+            )
             TTSModelProvider._creator_model = Qwen3TTSModel.from_pretrained(
-                local_path, 
-                device_map=self.device, 
+                local_path,
+                device_map=self.device,
                 torch_dtype=self.precision,
                 attn_implementation="flash_attention_2",
-                local_files_only=True
+                local_files_only=True,
             )
         return TTSModelProvider._creator_model
 
@@ -215,23 +233,28 @@ class TTSModelProvider:
             self._prepare_vram()
             repo = self.config.models.tts.base_repo_id
             local_path = self._get_local_path(repo)
-            
-            logger.info(f"Loading Synthesis Model (0.6B) directly from physical path: {local_path}")
+
+            logger.info(
+                f"Loading Synthesis Model (0.6B) directly from physical path: {local_path}"
+            )
             TTSModelProvider._synthesis_model = Qwen3TTSModel.from_pretrained(
-                local_path, 
-                device_map=self.device, 
+                local_path,
+                device_map=self.device,
                 torch_dtype=self.precision,
                 attn_implementation="flash_attention_2",
-                local_files_only=True
+                local_files_only=True,
             )
         return TTSModelProvider._synthesis_model
+
 
 class InferenceEngine:
     """
     Manages the lifecycle of a specific voice identity (Track).
     """
-    
-    def __init__(self, config: AppConfig, tts_provider: TTSModelProvider, lang: str = "en"):
+
+    def __init__(
+        self, config: AppConfig, tts_provider: TTSModelProvider, lang: str = "en"
+    ):
         """
         Initializes the inference engine for a specific track context.
 
@@ -243,7 +266,7 @@ class InferenceEngine:
         self.config = config
         self.tts_provider = tts_provider
         self.lang = lang
-        
+
         self.active_identity: Optional[VoiceClonePromptItem] = None
         self.active_seed: Optional[int] = None
         self.last_anchor_path: Optional[str] = None
@@ -263,14 +286,17 @@ class InferenceEngine:
         temp_identity = prompts[0]
         emb = temp_identity.ref_spk_embedding.clone().detach()
         from qwen_tts.inference.qwen3_tts_model import VoiceClonePromptItem
+
         self.active_identity = VoiceClonePromptItem(
-            ref_code=None, 
-            ref_spk_embedding=emb, 
-            x_vector_only_mode=True, 
-            icl_mode=False, 
-            ref_text=None
+            ref_code=None,
+            ref_spk_embedding=emb,
+            x_vector_only_mode=True,
+            icl_mode=False,
+            ref_text=None,
         )
-        logger.debug(f"Vector extracted successfully. Shape: {self.active_identity.ref_spk_embedding.shape}")
+        logger.debug(
+            f"Vector extracted successfully. Shape: {self.active_identity.ref_spk_embedding.shape}"
+        )
 
     def design_identity(self, prompt: str, seed: Optional[int] = None):
         """
@@ -289,15 +315,15 @@ class InferenceEngine:
         creator = self.tts_provider.get_creator_model()
         cal_text = CALIBRATION_TEXTS.get(self.lang, CALIBRATION_TEXTS["en"])
         full_lang = LANGUAGE_MAP.get(self.lang, "English")
-        
+
         logger.info(f"Designing Anchor Audio (Seed: {seed}) with calibration text.")
         wavs, fs = creator.generate_voice_design(
-            text=cal_text,
-            language=full_lang,
-            instruct=prompt
+            text=cal_text, language=full_lang, instruct=prompt
         )
-        
-        anchor_path = os.path.join(self.config.paths.temp_dir, f"anchor_design_{seed}.wav")
+
+        anchor_path = os.path.join(
+            self.config.paths.temp_dir, f"anchor_design_{seed}.wav"
+        )
         sf.write(anchor_path, wavs[0], fs)
         self.last_anchor_path = anchor_path
         logger.info(f"Design Anchor persisted at {anchor_path}")
@@ -317,7 +343,7 @@ class InferenceEngine:
         """
         self.active_seed = 42
         set_global_seed(self.active_seed)
-        
+
         if not os.path.exists(audio_path):
             logger.error(f"Source audio file not found: {audio_path}")
             raise FileNotFoundError(f"Audio file not found: {audio_path}")
@@ -326,18 +352,22 @@ class InferenceEngine:
         self._extract_vectors(audio_path, transcript if transcript else "")
 
         cal_text = CALIBRATION_TEXTS.get(self.lang, CALIBRATION_TEXTS["en"])
-        anchor_path = os.path.join(self.config.paths.temp_dir, f"anchor_clone_{int(time.time())}.wav")
+        anchor_path = os.path.join(
+            self.config.paths.temp_dir, f"anchor_clone_{int(time.time())}.wav"
+        )
 
         logger.info("Step 2/3: Rendering normalized Calibration Anchor...")
         self.render(cal_text, output_path=anchor_path)
 
         logger.info("Step 3/3: Consolidating final identity from Calibration Anchor...")
         self._extract_vectors(anchor_path, cal_text)
-        
+
         self.last_anchor_path = anchor_path
         logger.info(f"Consolidated Anchor persisted at {anchor_path}")
 
-    def load_identity_from_state(self, vector: List[float], seed: int, anchor_path: Optional[str] = None):
+    def load_identity_from_state(
+        self, vector: List[float], seed: int, anchor_path: Optional[str] = None
+    ):
         """
         Restores a voice identity from its persisted state components.
 
@@ -349,17 +379,54 @@ class InferenceEngine:
         logger.info(f"Loading identity from state. Seed: {seed}")
         device = self.tts_provider.device
         dtype = self.tts_provider.precision
-        emb = torch.tensor(vector, device=device, dtype=dtype).unsqueeze(0).clone().detach()
-        
+        emb = (
+            torch.tensor(vector, device=device, dtype=dtype)
+            .unsqueeze(0)
+            .clone()
+            .detach()
+        )
+
         self.active_identity = VoiceClonePromptItem(
-            ref_code=None, ref_spk_embedding=emb, x_vector_only_mode=True, icl_mode=False, ref_text=None
+            ref_code=None,
+            ref_spk_embedding=emb,
+            x_vector_only_mode=True,
+            icl_mode=False,
+            ref_text=None,
         )
         self.active_seed = seed
         self.last_anchor_path = anchor_path
-        
+
+    def _sanitize_text(self, text: str) -> str:
+        """
+        Ensures the text ends with a valid punctuation mark.
+        Supports Western, Cyrillic, and CJK (Chinese, Japanese, Korean) symbols.
+        """
+        text = text.strip()
+
+        valid_endings = (
+            # Western and Cyrillic
+            ".",
+            "!",
+            "?",
+            ":",
+            "...",
+            # CJK (Chinese, Japanese, Korean Full-width)
+            "。",
+            "！",
+            "？",
+            "：",
+            "…",
+            "……",
+        )
+
+        if not text.endswith(valid_endings):
+            return text + "."
+
+        return text
+
     # def _core_synthesis(
-    #     self, 
-    #     text: str, 
+    #     self,
+    #     text: str,
     #     output_path: Optional[str] = None,
     #     temperature: Optional[float] = None,
     #     top_p: Optional[float] = None,
@@ -386,14 +453,14 @@ class InferenceEngine:
     #     set_global_seed(self.active_seed)
     #     model = self.tts_provider.get_synthesis_model()
     #     full_lang = LANGUAGE_MAP.get(self.lang, "English")
-        
+
     #     if not output_path:
     #         output_path = os.path.join(self.config.paths.temp_dir, f"render_{int(time.time()*1000)}.wav")
 
     #     logger.info(f"Rendering synthesis to {output_path}...")
-    #     if torch.cuda.is_available(): 
+    #     if torch.cuda.is_available():
     #         torch.cuda.synchronize()
-        
+
     #     wavs, fs = model.generate_voice_clone(
     #         text=text,
     #         language=full_lang,
@@ -402,55 +469,61 @@ class InferenceEngine:
     #         top_p=top_p,
     #         repetition_penalty=repetition_penalty
     #     )
-        
-    #     if torch.cuda.is_available(): 
+
+    #     if torch.cuda.is_available():
     #         torch.cuda.synchronize()
-            
+
     #     sf.write(output_path, wavs[0], fs)
     #     logger.info(f"Ending rendering synthesis")
     #     return output_path
-    
+
     def _core_synthesis(
-        self, 
-        text: str, 
+        self,
+        text: str,
         output_path: Optional[str] = None,
         temperature: Optional[float] = None,
         top_p: Optional[float] = None,
-        repetition_penalty: Optional[float] = None
+        repetition_penalty: Optional[float] = None,
     ) -> str:
         if not self.active_identity or self.active_seed is None:
             logger.error("Synthesis failed: Active identity is missing.")
             raise ValueError("Identity incomplete (Vector or Seed missing).")
 
+        text = self._sanitize_text(text)
+
         set_global_seed(self.active_seed)
         model = self.tts_provider.get_synthesis_model()
         full_lang = LANGUAGE_MAP.get(self.lang, "English")
-        
+
         if not output_path:
-            output_path = os.path.join(self.config.paths.temp_dir, f"render_{int(time.time()*1000)}.wav")
+            output_path = os.path.join(
+                self.config.paths.temp_dir, f"render_{int(time.time()*1000)}.wav"
+            )
 
         logger.info(f"▶️ [ENGINE TRACE] Starting single synthesis.")
         logger.info(f"   ┣ Text: '{text[:50]}...' (Len: {len(text)})")
-        logger.info(f"   ┣ Params: Temp={temperature}, TopP={top_p}, Penalty={repetition_penalty}")
+        logger.info(
+            f"   ┣ Params: Temp={temperature}, TopP={top_p}, Penalty={repetition_penalty}"
+        )
         logger.info(f"   ┗ Output: {output_path}")
 
-        if torch.cuda.is_available(): 
+        if torch.cuda.is_available():
             torch.cuda.synchronize()
-        
+
         logger.info("🔥 [GPU IN] Invoking model.generate_voice_clone...")
-        
+
         wavs, fs = model.generate_voice_clone(
             text=text,
             language=full_lang,
             voice_clone_prompt=[self.active_identity],
             temperature=temperature,
             top_p=top_p,
-            repetition_penalty=repetition_penalty
+            repetition_penalty=repetition_penalty,
         )
-        
-        if torch.cuda.is_available(): 
+
+        if torch.cuda.is_available():
             torch.cuda.synchronize()
-            
+
         logger.info("✅ [GPU OUT] Generation successful. Writing to disk...")
         sf.write(output_path, wavs[0], fs)
         logger.info(f"⏹️ [ENGINE TRACE] Single synthesis completed.")
@@ -470,7 +543,12 @@ class InferenceEngine:
         logger.info(f"Starting normal rendering synthesis")
         return self._core_synthesis(text=text, output_path=output_path)
 
-    def render_with_emotion(self, text: str, emotion_params: Dict[str, float], output_path: Optional[str] = None) -> str:
+    def render_with_emotion(
+        self,
+        text: str,
+        emotion_params: Dict[str, float],
+        output_path: Optional[str] = None,
+    ) -> str:
         """
         Synthesizes audio using the active identity vector and target text, applying specific emotion-driven hyperparameters.
 
@@ -488,14 +566,12 @@ class InferenceEngine:
             output_path=output_path,
             temperature=emotion_params.get("temp"),
             top_p=emotion_params.get("top_p"),
-            repetition_penalty=emotion_params.get("penalty")
-        )        
-        
+            repetition_penalty=emotion_params.get("penalty"),
+        )
 
-    
     # def _core_synthesis_batch(
-    #     self, 
-    #     texts: List[str], 
+    #     self,
+    #     texts: List[str],
     #     output_paths: List[str],
     #     temperature: Optional[float] = None,
     #     top_p: Optional[float] = None,
@@ -503,26 +579,26 @@ class InferenceEngine:
     # ) -> List[str]:
     #     """
     #     Executes the underlying text-to-speech synthesis process for a batch of text strings
-    #     using the active identity vector and specific generation hyperparameters. 
-        
-    #     This method leverages the native batching capabilities of the Qwen3-TTS engine by 
+    #     using the active identity vector and specific generation hyperparameters.
+
+    #     This method leverages the native batching capabilities of the Qwen3-TTS engine by
     #     expanding the language parameters and executing a single forward pass on the GPU.
 
     #     Args:
     #         texts (List[str]): The ordered sequence of text strings to synthesize simultaneously.
-    #         output_paths (List[str]): The exact absolute file paths where each generated audio 
-    #                                   tensor should be persisted. The length of this list must 
+    #         output_paths (List[str]): The exact absolute file paths where each generated audio
+    #                                   tensor should be persisted. The length of this list must
     #                                   strictly match the length of the texts list.
     #         temperature (Optional[float]): Sampling temperature to control randomness and pitch variability.
     #         top_p (Optional[float]): Nucleus sampling probability threshold to constrain vocabulary selection.
     #         repetition_penalty (Optional[float]): Penalty factor to reduce repeated acoustic tokens.
 
     #     Returns:
-    #         List[str]: A list containing the absolute paths to the generated audio files, 
+    #         List[str]: A list containing the absolute paths to the generated audio files,
     #                    corresponding exactly to the order of the input texts.
 
     #     Raises:
-    #         ValueError: If the length of texts does not match the length of output_paths, 
+    #         ValueError: If the length of texts does not match the length of output_paths,
     #                     or if the active identity vector or seed is missing from the engine state.
     #     """
     #     if len(texts) != len(output_paths):
@@ -532,14 +608,14 @@ class InferenceEngine:
     #         raise ValueError("Identity incomplete. Vector or Seed missing from the engine state.")
 
     #     set_global_seed(self.active_seed)
-        
+
     #     model = self.tts_provider.get_synthesis_model()
     #     full_lang_string = LANGUAGE_MAP.get(self.lang, "English")
     #     full_lang_batch = [full_lang_string] * len(texts)
 
-    #     if torch.cuda.is_available(): 
+    #     if torch.cuda.is_available():
     #         torch.cuda.synchronize()
-        
+
     #     wavs, fs = model.generate_voice_clone(
     #         text=texts,
     #         language=full_lang_batch,
@@ -548,58 +624,70 @@ class InferenceEngine:
     #         top_p=top_p,
     #         repetition_penalty=repetition_penalty
     #     )
-        
-    #     if torch.cuda.is_available(): 
+
+    #     if torch.cuda.is_available():
     #         torch.cuda.synchronize()
 
     #     for audio_tensor, target_path in zip(wavs, output_paths):
     #         sf.write(target_path, audio_tensor, fs)
 
     #     return output_paths
-    
+
     def _core_synthesis_batch(
-        self, 
-        texts: List[str], 
+        self,
+        texts: List[str],
         output_paths: List[str],
         temperature: Optional[float] = None,
         top_p: Optional[float] = None,
-        repetition_penalty: Optional[float] = None
+        repetition_penalty: Optional[float] = None,
     ) -> List[str]:
         if len(texts) != len(output_paths):
-            raise ValueError("The number of input texts must strictly match the number of output paths.")
+            raise ValueError(
+                "The number of input texts must strictly match the number of output paths."
+            )
 
         if not self.active_identity or self.active_seed is None:
-            raise ValueError("Identity incomplete. Vector or Seed missing from the engine state.")
+            raise ValueError(
+                "Identity incomplete. Vector or Seed missing from the engine state."
+            )
+
+        texts = [self._sanitize_text(t) for t in texts]
 
         set_global_seed(self.active_seed)
-        
+
         model = self.tts_provider.get_synthesis_model()
         full_lang_string = LANGUAGE_MAP.get(self.lang, "English")
         full_lang_batch = [full_lang_string] * len(texts)
 
         logger.info(f"▶️ [ENGINE TRACE] Starting BATCH synthesis (Size: {len(texts)}).")
-        logger.info(f"   ┣ Params: Temp={temperature}, TopP={top_p}, Penalty={repetition_penalty}")
+        logger.info(
+            f"   ┣ Params: Temp={temperature}, TopP={top_p}, Penalty={repetition_penalty}"
+        )
         for i, t in enumerate(texts):
             logger.info(f"   ┣ Item {i}: '{t[:40]}...'")
 
-        if torch.cuda.is_available(): 
+        if torch.cuda.is_available():
             torch.cuda.synchronize()
-        
-        logger.info("🔥 [GPU BATCH IN] Invoking model.generate_voice_clone for cluster...")
-        
+
+        logger.info(
+            "🔥 [GPU BATCH IN] Invoking model.generate_voice_clone for cluster..."
+        )
+
         wavs, fs = model.generate_voice_clone(
             text=texts,
             language=full_lang_batch,
             voice_clone_prompt=[self.active_identity],
             temperature=temperature,
             top_p=top_p,
-            repetition_penalty=repetition_penalty
+            repetition_penalty=repetition_penalty,
         )
-        
-        if torch.cuda.is_available(): 
+
+        if torch.cuda.is_available():
             torch.cuda.synchronize()
 
-        logger.info("✅ [GPU BATCH OUT] Batch generation successful. Writing items to disk...")
+        logger.info(
+            "✅ [GPU BATCH OUT] Batch generation successful. Writing items to disk..."
+        )
         for audio_tensor, target_path in zip(wavs, output_paths):
             sf.write(target_path, audio_tensor, fs)
 
@@ -618,19 +706,21 @@ class InferenceEngine:
         Returns:
             List[str]: A list containing the absolute paths to the successfully generated audio files.
         """
-        return self._core_synthesis_batch(
-            texts=texts, 
-            output_paths=output_paths
-        )
+        return self._core_synthesis_batch(texts=texts, output_paths=output_paths)
 
-    def render_batch_with_emotion(self, texts: List[str], emotion_params: Dict[str, float], output_paths: List[str]) -> List[str]:
+    def render_batch_with_emotion(
+        self,
+        texts: List[str],
+        emotion_params: Dict[str, float],
+        output_paths: List[str],
+    ) -> List[str]:
         """
         Synthesizes a batch of audio files using the active identity vector and target texts,
         applying specific emotion-driven hyperparameters extracted from the emotion manager.
 
         Args:
             texts (List[str]): The sequence of text strings to synthesize.
-            emotion_params (Dict[str, float]): Dictionary containing the 'temp', 'top_p', and 
+            emotion_params (Dict[str, float]): Dictionary containing the 'temp', 'top_p', and
                                                'penalty' numerical modifiers for the batch.
             output_paths (List[str]): The target absolute file paths for the generated audio files.
 
@@ -642,7 +732,7 @@ class InferenceEngine:
             output_paths=output_paths,
             temperature=emotion_params.get("temp"),
             top_p=emotion_params.get("top_p"),
-            repetition_penalty=emotion_params.get("penalty")
+            repetition_penalty=emotion_params.get("penalty"),
         )
 
     def get_identity_vector(self) -> List[float]:
@@ -662,8 +752,11 @@ class VoiceBlender:
     """
     Handles interpolation and blending between two InferenceEngines.
     """
+
     @staticmethod
-    def blend(engine_a: InferenceEngine, engine_b: InferenceEngine, alpha: float) -> InferenceEngine:
+    def blend(
+        engine_a: InferenceEngine, engine_b: InferenceEngine, alpha: float
+    ) -> InferenceEngine:
         """
         Blends two voice identities and generates a consolidated Universal Anchor for the mix.
 
@@ -685,26 +778,36 @@ class VoiceBlender:
             emb_b = emb_b.to(emb_a.device)
 
         mixed_emb = ((1.0 - alpha) * emb_a + alpha * emb_b).clone().detach()
-        
+
         temp_identity = VoiceClonePromptItem(
-            ref_code=None, ref_spk_embedding=mixed_emb, x_vector_only_mode=True, icl_mode=False, ref_text=None
+            ref_code=None,
+            ref_spk_embedding=mixed_emb,
+            x_vector_only_mode=True,
+            icl_mode=False,
+            ref_text=None,
         )
-        
+
         mixed_seed = random.randint(0, 999999)
         set_global_seed(mixed_seed)
-        
+
         logger.info(f"Generating Universal Anchor for blend (Seed: {mixed_seed})")
-        temp_engine = InferenceEngine(engine_a.config, engine_a.tts_provider, engine_a.lang)
+        temp_engine = InferenceEngine(
+            engine_a.config, engine_a.tts_provider, engine_a.lang
+        )
         temp_engine.active_identity = temp_identity
         temp_engine.active_seed = mixed_seed
-        
+
         cal_text = CALIBRATION_TEXTS.get(engine_a.lang, CALIBRATION_TEXTS["en"])
-        anchor_path = os.path.join(engine_a.config.paths.temp_dir, f"anchor_blend_{mixed_seed}.wav")
-        
+        anchor_path = os.path.join(
+            engine_a.config.paths.temp_dir, f"anchor_blend_{mixed_seed}.wav"
+        )
+
         temp_engine.render(cal_text, output_path=anchor_path)
 
-        final_engine = InferenceEngine(engine_a.config, engine_a.tts_provider, engine_a.lang)
+        final_engine = InferenceEngine(
+            engine_a.config, engine_a.tts_provider, engine_a.lang
+        )
         final_engine.extract_identity(anchor_path, cal_text)
         final_engine.active_seed = mixed_seed
-        
+
         return final_engine

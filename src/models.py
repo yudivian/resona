@@ -260,6 +260,9 @@ class ProjectSource(str, Enum):
 class DialogLine(BaseModel):
     """
     Creative definition of a single script intervention.
+
+    Extended to include professional acoustic pacing and spatial context parameters 
+    required for seamless tensor concatenation and timeline merging.
     """
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     index: int
@@ -269,6 +272,14 @@ class DialogLine(BaseModel):
     language: Optional[str] = None
     emotion: Optional[str] = None
     intensity: Optional[str] = None
+    
+    scene: Optional[str] = None
+    scene_location: Optional[str] = None
+    
+    post_delay_ms: int = 400
+    fade_in_ms: int = 50
+    fade_out_ms: int = 50
+    room_tone_level: float = 0.0001
 
 class DialogScript(BaseModel):
     """
@@ -298,8 +309,10 @@ class LineState(BaseModel):
 class DialogProject(BaseModel):
     """
     Server-side project container for dialog generation.
+
+    Tracks execution states, physical directory allocations, background worker processes, 
+    and output derivatives including the master timeline mix.
     """
-    
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     source: ProjectSource = ProjectSource.UI
     
@@ -310,6 +323,8 @@ class DialogProject(BaseModel):
     pid: Optional[int] = None
     
     project_path: str
+    merged_audio_path: Optional[str] = None
+    
     created_at: float = Field(default_factory=time.time)
     updated_at: float = Field(default_factory=time.time)
     

@@ -10,6 +10,7 @@ from beaver import BeaverDB
 
 from src.config import settings
 from src.models import DialogProject, ProjectStatus, LineStatus
+from src.backend.audio_engine import AudioEngine, AudioSegmentConfig
 
 class DialogOrchestrator:
     """
@@ -318,6 +319,7 @@ class DialogOrchestrator:
             
         return self._delete_project_data_safe(project_id)
     
+    
     def purge_project_assets(self, project_id: str) -> bool:
         """
         Annuls designated operational processes and clears filesystem derivations without 
@@ -345,5 +347,71 @@ class DialogOrchestrator:
         
         if audio_dir.exists():
             shutil.rmtree(audio_dir, ignore_errors=True)
+        
+        db = BeaverDB(settings.paths.db_file)
+        projects_dict = db.dict("dialog_projects")
+        data["merged_audio_path"] = None
+        projects_dict[project_id] = data
             
         return True
+    
+    
+    def merge_project_audio(self, project_id: str) -> Optional[str]:
+        """
+        Orchestrates the transition from high-level project metadata to a 
+        low-level audio timeline. 
+
+        It maps DialogLine definitions into AudioSegmentConfig instances, 
+        invokes the generic AudioEngine for tensor-based merging, and 
+        persists the resulting master file path to the database.
+
+        Args:
+            project_id (str): The unique identifier of the project to merge.
+
+        Returns:
+            Optional[str]: Relative path to the merged master WAV, or None if failed.
+        """
+        data = self.get_project_data_safe(project_id)
+        if not data:
+            return None
+            
+        project = DialogProject(**data)
+        project_root = Path(project.project_path)
+        
+        segments = []
+        state_map = {s.line_id: s for s in project.states}
+        
+        for line in project.definition.script:
+            state = state_map.get(line.id)
+            if state and state.status == LineStatus.COMPLETED and state.audio_path:
+                audio_full_path = project_root / state.audio_path
+                if audio_full_path.exists():
+                    segments.append(AudioSegmentConfig(
+                        path=audio_full_path,
+                        fade_in_ms=line.fade_in_ms,
+                        fade_out_ms=line.fade_out_ms,
+                        post_delay_ms=line.post_delay_ms,
+                        room_tone_level=line.room_tone_level
+                    ))
+
+        if not segments:
+            return None
+
+        engine = AudioEngine(target_sample_rate=24000)
+        output_dir = project_root / "audio"
+        output_path = output_dir / "master_dialog.wav"
+        
+        success = engine.merge_segments(segments, output_path)
+        
+        if success:
+            relative_master_path = str(output_path.relative_to(project_root))
+            
+            db = BeaverDB(settings.paths.db_file)
+            projects_dict = db.dict("dialog_projects")
+            
+            data["merged_audio_path"] = relative_master_path
+            projects_dict[project_id] = data
+            
+            return relative_master_path
+            
+        return None

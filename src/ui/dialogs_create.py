@@ -18,8 +18,17 @@ def _persist_project(
     lines_data: list
 ) -> str:
     """
-    Constructs and persists the DialogProject to BeaverDB.
-    Hardcodes ProjectSource.UI and maps all fields from models.py.
+    Constructs and persists a new DialogProject instance to the database.
+
+    Args:
+        name (str): The display name of the project.
+        language (str): The primary ISO language code.
+        description (str): Detailed context or summary of the script.
+        tags (List[str]): Categorization labels for searching.
+        lines_data (list): Raw dictionary list containing line parameters.
+
+    Returns:
+        str: The unique identifier of the created project.
     """
     db = st.session_state.db
     projects_dict = db.dict("dialog_projects")
@@ -32,7 +41,13 @@ def _persist_project(
             text=data["text"].strip(),
             language=data["language"],
             emotion=data["emotion"] if data["emotion"] else None,
-            intensity=data["intensity"] if data["emotion"] and data["intensity"] else None
+            intensity=data["intensity"] if data["emotion"] and data["intensity"] else None,
+            scene=data.get("scene") if data.get("scene") else None,
+            scene_location=data.get("scene_location") if data.get("scene_location") else None,
+            post_delay_ms=data.get("post_delay_ms", 400),
+            fade_in_ms=data.get("fade_in_ms", 50),
+            fade_out_ms=data.get("fade_out_ms", 50),
+            room_tone_level=data.get("room_tone_level", 0.0001)
         ))
     
     script = DialogScript(
@@ -59,7 +74,8 @@ def _persist_project(
         definition=script,
         states=states,
         status=ProjectStatus.IDLE,
-        project_path=f"{settings.paths.dialogspace_dir}/{script.id}"
+        project_path=f"{settings.paths.dialogspace_dir}/{script.id}",
+        merged_audio_path=None
     )
     
     projects_dict[project.id] = project.model_dump()
@@ -67,7 +83,13 @@ def _persist_project(
 
 def render_create(navigate_to: Callable[[str, Optional[str]], None]) -> None:
     """
-    Optimized single-column creation view with metadata in one row and strict validation.
+    Renders the multi-step project creation form. 
+
+    Integrates voice selection, emotional mapping, and advanced acoustic pacing 
+    controls for high-fidelity dialog synthesis.
+
+    Args:
+        navigate_to (Callable[[str, Optional[str]], None]): Navigation router function.
     """
     from src.app_dialogs import MAX_DIALOG_LINES
 
@@ -76,20 +98,27 @@ def render_create(navigate_to: Callable[[str, Optional[str]], None]) -> None:
     if "emotion_manager" not in st.session_state:
         st.session_state.emotion_manager = EmotionManager(settings)
 
-    if st.button("← Back to Dashboard"):
-        navigate_to("dashboard", None)
-
-    st.title("✨ Create New Project")
+    st.markdown(f"### **Create New Project**")
     
     LANG_OPTIONS = ["es", "en", "fr", "zh", "ja", "ko"]
 
     if "temp_lines" not in st.session_state:
-        st.session_state.temp_lines = [{"voice_id": "", "text": "", "language": "es", "emotion": "", "intensity": ""}]
+        st.session_state.temp_lines = [{
+            "voice_id": "", 
+            "text": "", 
+            "language": "es", 
+            "emotion": "", 
+            "intensity": "",
+            "scene": "",
+            "scene_location": "",
+            "post_delay_ms": 400,
+            "fade_in_ms": 50,
+            "fade_out_ms": 50,
+            "room_tone_level": 0.0001
+        }]
 
-    # 1. Metadata Container - Optimized space
     with st.container(border=True):
         st.subheader("Project Configuration")
-        # Condensed row for Name, Language and Tags
         c_meta = st.columns([2, 1, 1.5])
         with c_meta[0]:
             p_name = st.text_input("Project Name", placeholder="e.g. Documentary V1")
@@ -101,7 +130,6 @@ def render_create(navigate_to: Callable[[str, Optional[str]], None]) -> None:
         p_desc = st.text_area("Description (Optional)", height=68, placeholder="Context...")
         p_tags = [t.strip() for t in p_tags_raw.split(",")] if p_tags_raw else []
 
-    # Assets
     voices = st.session_state.voice_store.get_all()
     voice_map = {v.id: v.name for v in voices}
     emotions_cat = st.session_state.emotion_manager.catalog.get("emotions", {})
@@ -112,7 +140,6 @@ def render_create(navigate_to: Callable[[str, Optional[str]], None]) -> None:
     updated_lines = []
     for i, line in enumerate(st.session_state.temp_lines):
         with st.container(border=True):
-            # Control Row: Voice, Lang, Emotion, Intensity, Delete
             row = st.columns([1.5, 0.7, 1.5, 1.2, 0.4])
             
             with row[0]:
@@ -141,13 +168,29 @@ def render_create(navigate_to: Callable[[str, Optional[str]], None]) -> None:
                     index=0 if not is_emo_set else list(int_opts.keys()).index(line["intensity"]) if line["intensity"] in int_opts else 0
                 )
             with row[4]:
-                # Precision Alignment: Structural padding for the delete button
                 st.markdown("<div style='padding-top: 28.5px;'></div>", unsafe_allow_html=True)
                 if st.button("🗑️", key=f"del_{i}", help="Delete this dialogue line", use_container_width=True):
                     if len(st.session_state.temp_lines) > 1:
                         st.session_state.temp_lines.pop(i)
                         st.rerun()
-            
+
+            with st.expander("🛠️ Acoustic & Context Settings", expanded=False):
+                ctx_cols = st.columns(2)
+                with ctx_cols[0]:
+                    l_scene = st.text_input("Scene Name", value=line.get("scene", ""), key=f"sc_{i}", placeholder="e.g. Scene 1")
+                with ctx_cols[1]:
+                    l_loc = st.text_input("Location", value=line.get("scene_location", ""), key=f"sl_{i}", placeholder="e.g. INT. OFFICE")
+                
+                aco_cols = st.columns(4)
+                with aco_cols[0]:
+                    l_delay = st.number_input("Post Delay (ms)", value=line.get("post_delay_ms", 400), step=50, key=f"pd_{i}")
+                with aco_cols[1]:
+                    l_fin = st.number_input("Fade In (ms)", value=line.get("fade_in_ms", 50), step=10, key=f"fi_{i}")
+                with aco_cols[2]:
+                    l_fout = st.number_input("Fade Out (ms)", value=line.get("fade_out_ms", 50), step=10, key=f"fo_{i}")
+                with aco_cols[3]:
+                    l_room = st.number_input("Room Tone", value=line.get("room_tone_level", 0.0001), format="%.5f", step=0.00005, key=f"rt_{i}")
+
             t_val = st.text_area("Text", value=line["text"], key=f"t_{i}", height=90, placeholder="Text to generate...")
 
             updated_lines.append({
@@ -155,7 +198,13 @@ def render_create(navigate_to: Callable[[str, Optional[str]], None]) -> None:
                 "text": t_val, 
                 "language": l_lang, 
                 "emotion": selected_emo, 
-                "intensity": selected_int if is_emo_set else ""
+                "intensity": selected_int if is_emo_set else "",
+                "scene": l_scene,
+                "scene_location": l_loc,
+                "post_delay_ms": l_delay,
+                "fade_in_ms": l_fin,
+                "fade_out_ms": l_fout,
+                "room_tone_level": l_room
             })
 
     st.session_state.temp_lines = updated_lines
@@ -164,13 +213,14 @@ def render_create(navigate_to: Callable[[str, Optional[str]], None]) -> None:
         if st.button("➕ Add Line", use_container_width=True):
             st.session_state.temp_lines.append({
                 "voice_id": list(voice_map.keys())[0] if voice_map else "", 
-                "text": "", "language": p_lang, "emotion": "", "intensity": ""
+                "text": "", "language": p_lang, "emotion": "", "intensity": "",
+                "scene": "", "scene_location": "", "post_delay_ms": 400,
+                "fade_in_ms": 50, "fade_out_ms": 50, "room_tone_level": 0.0001
             })
             st.rerun()
 
     st.divider()
 
-    # Final Validation
     if st.button("🚀 Initialize Project", type="primary", use_container_width=True):
         valid_lines = [l for l in st.session_state.temp_lines if l["voice_id"] and l["text"].strip()]
         

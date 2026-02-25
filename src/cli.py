@@ -1,3 +1,8 @@
+"""
+Resona Infrastructure CLI - Centralized entry point for managing Resona services.
+Includes sub-commands for Studio, Emotion CAD, Dialog Orchestration, and Voice API.
+"""
+
 import argparse
 import sys
 import subprocess
@@ -13,8 +18,7 @@ def run_studio(args):
     Launches the Streamlit User Interface (Resona Studio).
     
     This function locates the 'app.py' entry point relative to this script
-    and executes it using the Streamlit CLI via a subprocess. This isolation
-    ensures that Streamlit's internal loop does not conflict with the CLI wrapper.
+    and executes it using the Streamlit CLI via a subprocess.
     """
     current_dir = Path(__file__).parent
     app_path = current_dir / "app.py"
@@ -66,12 +70,39 @@ def run_emotions(args):
         logger.error(f"❌ Emotion CAD crashed with error code {e.returncode}")
         sys.exit(e.returncode)
 
+def run_dialogs(args):
+    """
+    Launches the Streamlit User Interface for Dialog Orchestration (app_dialogs.py).
+    
+    This command isolates the Dialog management tool execution for production scripts.
+    """
+    current_dir = Path(__file__).parent
+    app_path = current_dir / "app_dialogs.py"
+    
+    if not app_path.exists():
+        logger.error(f"Could not find Dialog Orchestrator entry point at: {app_path}")
+        sys.exit(1)
+        
+    logger.info(f"💬 Launching Resona Dialogs from: {app_path}")
+    
+    cmd = [sys.executable, "-m", "streamlit", "run", str(app_path)]
+    
+    if args.debug:
+        logger.setLevel(logging.DEBUG)
+        
+    try:
+        subprocess.run(cmd, check=True)
+    except KeyboardInterrupt:
+        logger.info("🛑 Dialogs stopped by user.")
+    except subprocess.CalledProcessError as e:
+        logger.error(f"❌ Dialogs crashed with error code {e.returncode}")
+        sys.exit(e.returncode)
+
 def run_voice_api(args):
     """
     Starts the Core Voice Discovery & Asset API.
     
     This command initializes the FastAPI application defined in 'src.api.api'.
-    It uses Uvicorn as the ASGI server production runner.
     """
     logger.info(f"🎙️ Starting Resona Voice API on {args.host}:{args.port}")
     if args.reload:
@@ -91,7 +122,7 @@ def main():
     Parses arguments and dispatches control to the appropriate sub-command handler.
     """
     parser = argparse.ArgumentParser(
-        description="Resona Infrastructure CLI - Manage Studio, Emotion CAD, and API services.",
+        description="Resona Infrastructure CLI - Manage Studio, Emotion CAD, Dialogs, and API services.",
         prog="resona"
     )
     
@@ -111,6 +142,12 @@ def main():
         help="Launch the Emotion CAD visual interface (Streamlit)"
     )
     emotions_parser.set_defaults(func=run_emotions)
+
+    dialogs_parser = subparsers.add_parser(
+        "dialogs", 
+        help="Launch the Dialog Orchestration interface (Streamlit)"
+    )
+    dialogs_parser.set_defaults(func=run_dialogs)
 
     voice_api_parser = subparsers.add_parser(
         "voice-api", 

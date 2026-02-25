@@ -387,40 +387,6 @@ class InferenceEngine:
         )        
         
 
-    # def render(self, text: str, output_path: Optional[str] = None) -> str:
-    #     """
-    #     Synthesizes audio using the active identity vector and target text.
-
-    #     Args:
-    #         text (str): The text string to synthesize.
-    #         output_path (Optional[str]): Specific path to save the generated audio.
-
-    #     Returns:
-    #         str: Path to the generated audio file.
-    #     """
-    #     if not self.active_identity or self.active_seed is None:
-    #         logger.error("Synthesis failed: Active identity is missing.")
-    #         raise ValueError("Identity incomplete (Vector or Seed missing).")
-
-    #     set_global_seed(self.active_seed)
-    #     model = self.tts_provider.get_synthesis_model()
-    #     full_lang = LANGUAGE_MAP.get(self.lang, "English")
-        
-    #     if not output_path:
-    #         output_path = os.path.join(self.config.paths.temp_dir, f"render_{int(time.time()*1000)}.wav")
-
-    #     logger.info(f"Rendering synthesis to {output_path}...")
-    #     if torch.cuda.is_available(): torch.cuda.synchronize()
-        
-    #     wavs, fs = model.generate_voice_clone(
-    #         text=text,
-    #         language=full_lang,
-    #         voice_clone_prompt=[self.active_identity]
-    #     )
-        
-    #     if torch.cuda.is_available(): torch.cuda.synchronize()
-    #     sf.write(output_path, wavs[0], fs)
-    #     return output_path
     
     def _core_synthesis_batch(
         self, 

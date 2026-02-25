@@ -1,11 +1,3 @@
-"""
-Dialog clustering module.
-
-This module provides services to aggregate individual dialog lines into 
-optimized processing batches to maximize hardware utilization during synthesis
-while preventing out-of-memory errors through batch size limits.
-"""
-
 from typing import List, Dict, Tuple, Optional
 from dataclasses import dataclass
 from src.models import DialogProject, LineStatus, DialogLine

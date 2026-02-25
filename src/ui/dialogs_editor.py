@@ -10,8 +10,18 @@ from src.emotions.manager import EmotionManager
 
 def _apply_changes(state: dict, project_id: str) -> bool:
     """
-    Performs concurrency validation, resets all generation states, triggers 
-    physical asset purging via the orchestrator, and executes a full database upsert.
+    Executes a comprehensive project update by validating data integrity, resetting 
+    execution states, and purging physical assets. 
+    
+    This function invalidates any existing master audio merge by resetting the 
+    merged_audio_path to ensure the filesystem remains synchronized with the script.
+
+    Args:
+        state (dict): The in-memory buffer containing modified project data.
+        project_id (str): The unique identifier of the project to update.
+
+    Returns:
+        bool: True if the operation succeeded, False if aborted due to active generation.
     """
     db = st.session_state.db
     current_db_state = db.dict("dialog_projects").get(project_id)
@@ -24,6 +34,7 @@ def _apply_changes(state: dict, project_id: str) -> bool:
         state["status"] = ProjectStatus.IDLE.value
         state["pid"] = None
         state["error"] = None
+        state["merged_audio_path"] = None
         
         script = state["definition"].get("script", [])
         state["states"] = [
@@ -31,6 +42,8 @@ def _apply_changes(state: dict, project_id: str) -> bool:
                 "line_id": line.get("id", str(uuid.uuid4())), 
                 "index": i, 
                 "status": LineStatus.PENDING.value, 
+                "emotion_id": line.get("emotion"),
+                "intensity_id": line.get("intensity"),
                 "audio_path": None
             } 
             for i, line in enumerate(script)
@@ -50,9 +63,14 @@ def _apply_changes(state: dict, project_id: str) -> bool:
 
 def render_editor(navigate_to: Callable[[str, Optional[str]], None]) -> None:
     """
-    Renders the script editor. Utilizes an in-memory buffer to prevent accidental 
-    database mutations until explicitly saved by the user. Offers a strict bifurcation 
-    between full visual editing and full JSON replacement.
+    Renders the unified script editor interface. 
+    
+    Provides a dual-mode editing experience (Visual/JSON) allowing for granular control 
+    over dialog parameters, emotional intensity, and acoustic pacing.
+
+    Args:
+        navigate_to (Callable[[str, Optional[str]], None]): The routing function used 
+                                                            to transition between views.
     """
     from src.app_dialogs import MAX_DIALOG_LINES
 
@@ -84,7 +102,7 @@ def render_editor(navigate_to: Callable[[str, Optional[str]], None]) -> None:
     intensities_cat = st.session_state.emotion_manager.catalog.get("intensifiers", {})
     lang_options = ["es", "en", "fr", "zh", "ja", "ko"]
 
-    st.title(f"✏️ Editor: {state['definition'].get('name', 'Unknown')}")
+    st.markdown(f"### **Editor**: *{state['definition'].get('name', 'Unknown')}*")
     
     if is_locked:
         st.warning(f"Project is {state.get('status')}. Structural edits are disabled.")
@@ -113,7 +131,7 @@ def render_editor(navigate_to: Callable[[str, Optional[str]], None]) -> None:
                             l["id"] = str(uuid.uuid4())
                             
                     state["definition"] = new_def
-                    st.success("JSON loaded into memory. Click 'Save Changes' below to apply and reset the project.")
+                    st.success("JSON loaded into memory. Click 'Save Changes' below to apply.")
                     with st.expander("Preview Loaded Definition"):
                         st.json(state["definition"])
                 except Exception as e:
@@ -159,6 +177,23 @@ def render_editor(navigate_to: Callable[[str, Optional[str]], None]) -> None:
                     if st.button("🗑️", key=f"del_{i}", disabled=is_locked or line_count <= 1, use_container_width=True):
                         state["definition"]["script"].pop(i)
                         st.rerun()
+
+                with st.expander("🛠️ Acoustic & Context Settings", expanded=False):
+                    ctx_cols = st.columns(2)
+                    with ctx_cols[0]:
+                        line["scene"] = st.text_input("Scene Name", value=line.get("scene", ""), key=f"sc_{i}", placeholder="e.g. Scene 1", disabled=is_locked)
+                    with ctx_cols[1]:
+                        line["scene_location"] = st.text_input("Location", value=line.get("scene_location", ""), key=f"sl_{i}", placeholder="e.g. INT. OFFICE", disabled=is_locked)
+                    
+                    aco_cols = st.columns(4)
+                    with aco_cols[0]:
+                        line["post_delay_ms"] = st.number_input("Post Delay (ms)", value=line.get("post_delay_ms", 400), step=50, key=f"pd_{i}", disabled=is_locked)
+                    with aco_cols[1]:
+                        line["fade_in_ms"] = st.number_input("Fade In (ms)", value=line.get("fade_in_ms", 50), step=10, key=f"fi_{i}", disabled=is_locked)
+                    with aco_cols[2]:
+                        line["fade_out_ms"] = st.number_input("Fade Out (ms)", value=line.get("fade_out_ms", 50), step=10, key=f"fo_{i}", disabled=is_locked)
+                    with aco_cols[3]:
+                        line["room_tone_level"] = st.number_input("Room Tone", value=line.get("room_tone_level", 0.0001), format="%.5f", step=0.00005, key=f"rt_{i}", disabled=is_locked)
                 
                 line["text"] = st.text_area("Text", value=line.get("text", ""), key=f"t_{i}", height=90, disabled=is_locked)
 
@@ -171,12 +206,16 @@ def render_editor(navigate_to: Callable[[str, Optional[str]], None]) -> None:
                     "text": "",
                     "language": state["definition"].get("default_language", "es"),
                     "emotion": None,
-                    "intensity": None
+                    "intensity": None,
+                    "scene": "",
+                    "scene_location": "",
+                    "post_delay_ms": 400,
+                    "fade_in_ms": 50,
+                    "fade_out_ms": 50,
+                    "room_tone_level": 0.0001
                 }
                 state["definition"]["script"].append(new_line)
                 st.rerun()
-        else:
-            st.info(f"Visual limit of {MAX_DIALOG_LINES} lines reached. Switch to the JSON Editor to add more lines.")
 
     st.divider()
     f_col1, f_col2 = st.columns(2)
@@ -189,7 +228,7 @@ def render_editor(navigate_to: Callable[[str, Optional[str]], None]) -> None:
         val_error = "Project name is required."
     elif any(not l.get("text", "").strip() for l in state["definition"].get("script", [])):
         validation_passed = False
-        val_error = "All lines must contain text. Please fill empty fields before saving."
+        val_error = "All lines must contain text before saving."
 
     with f_col1:
         if st.button("💾 Save Changes", use_container_width=True, disabled=is_locked):

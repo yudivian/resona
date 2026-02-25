@@ -158,33 +158,6 @@ class DialogOrchestrator:
         self._write_project_data_safe(project_id, project.model_dump())
         
         return True
-
-    # def sync_status(self, project_id: str) -> Optional[DialogProject]:
-    #     """
-    #     Validates internal OS mappings verifying whether designated execution PIDs 
-    #     are actively processing iterations.
-
-    #     Args:
-    #         project_id (str): Evaluated targeting identifier for the database schema.
-
-    #     Returns:
-    #         Optional[DialogProject]: Structured model schema mirroring the verified external system state.
-    #     """
-    #     data = self.get_project_data_safe(project_id)
-    #     if not data:
-    #         return None
-        
-    #     project = DialogProject(**data)
-    #     current_status = str(project.status).lower()
-        
-    #     if current_status in [ProjectStatus.STARTING.value, ProjectStatus.GENERATING.value, "starting", "generating"]:
-    #         if not self._is_pid_alive(project.pid):
-    #             project.status = ProjectStatus.FAILED
-    #             data['status'] = ProjectStatus.FAILED.value
-    #             data['error'] = "Worker process died unexpectedly without saving state."
-    #             self._write_project_data_safe(project_id, data)
-        
-    #     return project
     
     def sync_status(self, project_id: str) -> Optional[DialogProject]:
         logger.debug(f"[ORCHESTRATOR] Syncing status for project: {project_id}")

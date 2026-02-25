@@ -185,13 +185,14 @@ def render_monitor(navigate_to: Callable[[str, Optional[str]], None]) -> None:
         master_full_path = Path(project.project_path) / master_path_str
         if master_full_path.exists():
             with st.container(border=True):
-                st.markdown("### 🎙️ Master Timeline Output")
+                st.markdown("**Master Wav Output**")
                 mc1, mc2 = st.columns([5, 1], vertical_alignment="center")
                 with mc1:
                     st.audio(str(master_full_path))
                 with mc2:
                     with open(master_full_path, "rb") as f: master_bytes = f.read()
-                    st.download_button(label="⬇️ Master WAV", data=master_bytes, file_name=f"master_{project.definition.name.replace(' ', '_')}.wav", mime="audio/wav", key=f"dl_master_{project.id}", use_container_width=True)
+                    st.download_button(label="⬇️ WAV", data=master_bytes, file_name=f"master_{project.definition.name.replace(' ', '_')}.wav", mime="audio/wav", key=f"dl_master_{project.id}", use_container_width=True)
+            st.divider()
 
     
 

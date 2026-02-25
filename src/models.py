@@ -301,15 +301,57 @@ class DialogScript(BaseModel):
         """
         data = self.model_dump()
         
-        # Limpiar identificadores y metadatos del proyecto
         data.pop("id", None)
         data.pop("created_at", None)
         
-        # Limpiar identificadores de cada línea
         for line in data.get("script", []):
             line.pop("id", None)
             
         return json.dumps(data, indent=2, ensure_ascii=False)
+    
+    @classmethod
+    def validate_template(cls, json_content: str) -> Dict[str, Any]:
+        """
+        Validates the raw JSON string to ensure structural integrity and 
+        business rules (e.g., unique indices) without instantiating the model.
+        """
+        try:
+            data = json.loads(json_content)
+        except json.JSONDecodeError:
+            raise ValueError("The provided file is not a valid JSON format.")
+
+        script_lines = data.get("script", [])
+        if not isinstance(script_lines, list):
+            raise ValueError("The 'script' field must be a list of lines.")
+
+        seen_indices = set()
+        for line in script_lines:
+            idx = line.get("index")
+            if idx is None:
+                raise ValueError("All lines must have a numeric 'index' value.")
+                
+            if idx in seen_indices:
+                raise ValueError(f"Duplicate index detected: {idx}. Line order must be unique.")
+            seen_indices.add(idx)
+            
+        return data
+    
+    @classmethod
+    def import_template(cls, json_content: str) -> "DialogScript":
+        """
+        Safely imports a script template by first invoking the validation layer, 
+        assigning fresh UUIDs, and instantiating the Pydantic model to prevent 
+        database collisions.
+        """
+        data = cls.validate_template(json_content)
+
+        data["id"] = str(uuid.uuid4())
+        data.pop("created_at", None)
+        
+        for line in data.get("script", []):
+            line["id"] = str(uuid.uuid4())
+            
+        return cls(**data)
 
 class LineState(BaseModel):
     """

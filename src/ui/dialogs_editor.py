@@ -238,7 +238,7 @@ def render_editor(navigate_to: Callable[[str, Optional[str]], None]) -> None:
             else:
                 st.error(val_error)
     with f_col2:
-        if st.button("🚀 Proceed to Monitor", type="primary", use_container_width=True):
+        if st.button("🚀 Save and Go to Monitor", type="primary", use_container_width=True):
             if validation_passed:
                 if _apply_changes(state, project_id):
                     navigate_to("monitor", project_id)

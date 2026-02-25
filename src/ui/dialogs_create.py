@@ -221,7 +221,7 @@ def render_create(navigate_to: Callable[[str, Optional[str]], None]) -> None:
 
     st.divider()
 
-    if st.button("🚀 Initialize Project", type="primary", use_container_width=True):
+    if st.button("🚀 Initialize Project and Go to Monitor", type="primary", use_container_width=True):
         valid_lines = [l for l in st.session_state.temp_lines if l["voice_id"] and l["text"].strip()]
         
         if not p_name.strip():
@@ -235,4 +235,4 @@ def render_create(navigate_to: Callable[[str, Optional[str]], None]) -> None:
             st.success("Project ready.")
             del st.session_state.temp_lines
             time.sleep(0.5)
-            navigate_to("editor", pid)
+            navigate_to("monitor", pid)

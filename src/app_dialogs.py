@@ -6,6 +6,7 @@ from typing import Callable, Optional
 
 from src.config import settings
 from beaver import BeaverDB
+from pydantic import ValidationError
 from src.dialogs.orchestrator import DialogOrchestrator
 from src.models import DialogProject, DialogScript, ProjectStatus, ProjectSource, LineState, LineStatus
 
@@ -13,6 +14,7 @@ from src.ui.dialogs_dashboard import render_dashboard
 from src.ui.dialogs_create import render_create
 from src.ui.dialogs_editor import render_editor
 from src.ui.dialogs_monitor import render_monitor
+
 
 MAX_DIALOG_LINES = 50
 POLLING_INTERVAL_SEC = 10.0
@@ -24,38 +26,51 @@ def import_dialog() -> None:
     """
     Displays a modal for importing an external JSON script definition.
     
-    It validates the schema, initializes technical states for each line, 
-    and saves the new DialogProject instance to the database.
+    It validates the schema using the new import_template factory, 
+    initializes technical states for each line, and saves the new 
+    DialogProject instance to the database.
     """
     st.write("Upload a JSON file to initialize a new project workspace.")
     imp_file = st.file_uploader("JSON Script File", type=['json'], key="global_import_uploader")
     
     if imp_file:
         try:
-            data = json.load(imp_file)
-            script_data = data["definition"] if "definition" in data else data
-            script = DialogScript(**script_data)
+            # 1. Leer y decodificar el archivo en memoria
+            json_string = imp_file.getvalue().decode("utf-8")
             
+            # 2. Validar e instanciar usando el método de fábrica seguro
+            script = DialogScript.import_template(json_string)
+            
+            # 3. Ensamblar y guardar en base de datos
             db = st.session_state.db
             projects_dict = db.dict("dialog_projects")
+            
+            from pathlib import Path
+            workspace_dir = str(Path(settings.paths.dialogspace_dir) / script.id)
             
             project = DialogProject(
                 source=ProjectSource.UI,
                 definition=script,
-                states=[
-                    LineState(line_id=l.id, index=i, status=LineStatus.PENDING) 
-                    for i, l in enumerate(script.script)
-                ],
-                status=ProjectStatus.IDLE,
-                project_path=f"{settings.paths.dialogspace_dir}/{script.id}"
+                states=[LineState(line_id=line.id, index=line.index, status=LineStatus.PENDING) for line in script.script],
+                project_path=workspace_dir,
+                status=ProjectStatus.IDLE
             )
             
             projects_dict[project.id] = project.model_dump()
-            st.success("Project imported and initialized.")
-            time.sleep(0.5)
+            st.success(f"Project '{script.name}' imported successfully!")
+            time.sleep(1)
             st.rerun()
+            
+        except ValueError as e:
+            st.error(f"Validation Error: {e}")
+            
+        except ValidationError as e:
+            st.error("Schema Error: The JSON structure is invalid or missing required fields.")
+            with st.expander("View schema details"):
+                st.text(str(e))
+                
         except Exception as e:
-            st.error(f"Import failed: {e}")
+            st.error(f"Unexpected error: {e}")
 
 def init_session_state() -> None:
     """

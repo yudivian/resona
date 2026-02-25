@@ -35,13 +35,10 @@ def import_dialog() -> None:
     
     if imp_file:
         try:
-            # 1. Leer y decodificar el archivo en memoria
             json_string = imp_file.getvalue().decode("utf-8")
             
-            # 2. Validar e instanciar usando el método de fábrica seguro
             script = DialogScript.import_template(json_string)
             
-            # 3. Ensamblar y guardar en base de datos
             db = st.session_state.db
             projects_dict = db.dict("dialog_projects")
             
@@ -59,7 +56,7 @@ def import_dialog() -> None:
             projects_dict[project.id] = project.model_dump()
             st.success(f"Project '{script.name}' imported successfully!")
             time.sleep(1)
-            st.rerun()
+            navigate_to("monitor", project.id)
             
         except ValueError as e:
             st.error(f"Validation Error: {e}")

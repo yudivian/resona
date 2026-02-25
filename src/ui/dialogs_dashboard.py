@@ -180,8 +180,8 @@ def render_dashboard(navigate_to: Callable[[str, Optional[str]], None]) -> None:
                             key=f"wav_{project.id}"
                         )
                     else:
-                        st.button("🔊 Audio", use_container_width=True, disabled=True, help="Full master audio not yet generated.")
-
+                        st.button("🔊 Audio", use_container_width=True, disabled=True, help="Full master audio not yet generated.",key=f"wav_{project.id}")
+                                  
                 with b_cols[4]:
                     if st.button("🗑️ Delete", key=f"del_{project.id}", use_container_width=True, disabled=not can_modify):
                         delete_confirmation_dialog(project.id, project.definition.name)

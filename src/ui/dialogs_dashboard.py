@@ -150,7 +150,7 @@ def render_dashboard(navigate_to: Callable[[str, Optional[str]], None]) -> None:
                         navigate_to("editor", project.id)
                 
                 with b_cols[2]:
-                    script_json = project.definition.model_dump_json(indent=2)
+                    script_json = project.definition.export_as_template()
                     st.download_button(
                         label="📄 JSON", 
                         data=script_json, 

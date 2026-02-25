@@ -155,7 +155,7 @@ def render_monitor(navigate_to: Callable[[str, Optional[str]], None]) -> None:
                 st.session_state.orchestrator.merge_project_audio(project.id)
                 st.rerun()
     with ctrl_5:
-        script_json = project.definition.model_dump_json(indent=2)
+        script_json = project.definition.export_as_template()
         st.download_button(label="📄", help="Download JSON", data=script_json, file_name=f"{project.definition.name.replace(' ', '_')}_script.json", mime="application/json", use_container_width=True)
     with ctrl_6:
         if is_completed:

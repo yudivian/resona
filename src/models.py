@@ -1,5 +1,6 @@
 import time
 import uuid
+import json
 from typing import List, Dict, Any, Optional
 from enum import Enum
 from pydantic import BaseModel, Field, ConfigDict
@@ -292,6 +293,23 @@ class DialogScript(BaseModel):
     default_language: str = "es"
     created_at: float = Field(default_factory=time.time)
     script: List[DialogLine]
+    
+    def export_as_template(self) -> str:
+        """
+        Exports the script as a clean JSON template, stripping out all 
+        database-specific identifiers (UUIDs) and internal execution states.
+        """
+        data = self.model_dump()
+        
+        # Limpiar identificadores y metadatos del proyecto
+        data.pop("id", None)
+        data.pop("created_at", None)
+        
+        # Limpiar identificadores de cada línea
+        for line in data.get("script", []):
+            line.pop("id", None)
+            
+        return json.dumps(data, indent=2, ensure_ascii=False)
 
 class LineState(BaseModel):
     """

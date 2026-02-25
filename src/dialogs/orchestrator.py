@@ -12,6 +12,10 @@ from src.config import settings
 from src.models import DialogProject, ProjectStatus, LineStatus
 from src.backend.audio_engine import AudioEngine, AudioSegmentConfig
 
+import logging
+logger = logging.getLogger("Orchestrator")
+logger.setLevel(logging.DEBUG)
+
 class DialogOrchestrator:
     """
     Service responsible for the lifecycle management and supervision of detached 
@@ -155,29 +159,52 @@ class DialogOrchestrator:
         
         return True
 
+    # def sync_status(self, project_id: str) -> Optional[DialogProject]:
+    #     """
+    #     Validates internal OS mappings verifying whether designated execution PIDs 
+    #     are actively processing iterations.
+
+    #     Args:
+    #         project_id (str): Evaluated targeting identifier for the database schema.
+
+    #     Returns:
+    #         Optional[DialogProject]: Structured model schema mirroring the verified external system state.
+    #     """
+    #     data = self.get_project_data_safe(project_id)
+    #     if not data:
+    #         return None
+        
+    #     project = DialogProject(**data)
+    #     current_status = str(project.status).lower()
+        
+    #     if current_status in [ProjectStatus.STARTING.value, ProjectStatus.GENERATING.value, "starting", "generating"]:
+    #         if not self._is_pid_alive(project.pid):
+    #             project.status = ProjectStatus.FAILED
+    #             data['status'] = ProjectStatus.FAILED.value
+    #             data['error'] = "Worker process died unexpectedly without saving state."
+    #             self._write_project_data_safe(project_id, data)
+        
+    #     return project
+    
     def sync_status(self, project_id: str) -> Optional[DialogProject]:
-        """
-        Validates internal OS mappings verifying whether designated execution PIDs 
-        are actively processing iterations.
-
-        Args:
-            project_id (str): Evaluated targeting identifier for the database schema.
-
-        Returns:
-            Optional[DialogProject]: Structured model schema mirroring the verified external system state.
-        """
+        logger.debug(f"[ORCHESTRATOR] Syncing status for project: {project_id}")
         data = self.get_project_data_safe(project_id)
         if not data:
+            logger.warning(f"[ORCHESTRATOR] Project data not found for {project_id}")
             return None
         
         project = DialogProject(**data)
         current_status = str(project.status).lower()
         
         if current_status in [ProjectStatus.STARTING.value, ProjectStatus.GENERATING.value, "starting", "generating"]:
-            if not self._is_pid_alive(project.pid):
+            is_alive = self._is_pid_alive(project.pid)
+            logger.debug(f"[ORCHESTRATOR] Worker PID {project.pid} is alive: {is_alive}")
+            
+            if not is_alive:
+                logger.error(f"[ORCHESTRATOR] 🚨 FATAL: PID {project.pid} died unexpectedly while {current_status.upper()}!")
                 project.status = ProjectStatus.FAILED
                 data['status'] = ProjectStatus.FAILED.value
-                data['error'] = "Worker process died unexpectedly without saving state."
+                data['error'] = "Worker process died unexpectedly without saving state (Possible GPU OOM)."
                 self._write_project_data_safe(project_id, data)
         
         return project

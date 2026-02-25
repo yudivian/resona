@@ -10,7 +10,10 @@ from src.models import AppConfig
 from qwen_tts import Qwen3TTSModel
 from qwen_tts.inference.qwen3_tts_model import VoiceClonePromptItem
 
+from huggingface_hub import snapshot_download
+
 logger = logging.getLogger(__name__)
+
 
 CALIBRATION_TEXTS = {
     # English: "The Rainbow Passage". Standard text for phonetic analysis.
@@ -129,41 +132,97 @@ class TTSModelProvider:
             torch.cuda.synchronize()
             torch.cuda.empty_cache()
 
-    def get_creator_model(self) -> Qwen3TTSModel:
+    # def get_creator_model(self) -> Qwen3TTSModel:
+    #     """
+    #     Retrieves the 1.7B parameter model used for Voice Design.
+
+    #     Returns:
+    #         Qwen3TTSModel: The loaded Design model instance.
+    #     """
+    #     if TTSModelProvider._creator_model is None:
+    #         self._prepare_vram()
+    #         repo = self.config.models.tts.design_repo_id
+    #         logger.info(f"Loading Creator Model (1.7B) from {repo}...")
+    #         TTSModelProvider._creator_model = Qwen3TTSModel.from_pretrained(
+    #             repo, 
+    #             device_map=self.device, 
+    #             torch_dtype=self.precision,
+    #             attn_implementation="flash_attention_2"
+    #         )
+    #     return TTSModelProvider._creator_model
+
+    # def get_synthesis_model(self) -> Qwen3TTSModel:
+    #     """
+    #     Retrieves the 0.6B parameter model used for Vector Extraction and Synthesis.
+
+    #     Returns:
+    #         Qwen3TTSModel: The loaded Base model instance.
+    #     """
+    #     if TTSModelProvider._synthesis_model is None:
+    #         self._prepare_vram()
+    #         repo = self.config.models.tts.base_repo_id
+    #         logger.info(f"Loading Synthesis Model (0.6B) from {repo}...")
+    #         TTSModelProvider._synthesis_model = Qwen3TTSModel.from_pretrained(
+    #             repo, 
+    #             device_map=self.device, 
+    #             torch_dtype=self.precision,
+    #             attn_implementation="flash_attention_2"
+    #         )
+    #     return TTSModelProvider._synthesis_model
+    
+    def _get_local_path(self, repo_id: str) -> str:
         """
-        Retrieves the 1.7B parameter model used for Voice Design.
+        Resolves a Hugging Face Hub repository ID to its absolute physical path 
+        on the local filesystem. This prevents the underlying Transformers library 
+        from attempting any network resolution for custom code files.
+
+        Args:
+            repo_id (str): The standard Hugging Face repository string.
 
         Returns:
-            Qwen3TTSModel: The loaded Design model instance.
+            str: The absolute path to the cached snapshot directory.
+        """
+        try:
+            return snapshot_download(repo_id=repo_id, local_files_only=True)
+        except Exception as e:
+            logger.error(f"Failed to resolve physical path for {repo_id}. Ensure the model is cached.")
+            raise e
+
+    def get_creator_model(self) -> Qwen3TTSModel:
+        """
+        Initializes and returns the 1.7B Creator model.
         """
         if TTSModelProvider._creator_model is None:
             self._prepare_vram()
             repo = self.config.models.tts.design_repo_id
-            logger.info(f"Loading Creator Model (1.7B) from {repo}...")
+            local_path = self._get_local_path(repo)
+            
+            logger.info(f"Loading Creator Model (1.7B) directly from physical path: {local_path}")
             TTSModelProvider._creator_model = Qwen3TTSModel.from_pretrained(
-                repo, 
+                local_path, 
                 device_map=self.device, 
                 torch_dtype=self.precision,
-                attn_implementation="flash_attention_2"
+                attn_implementation="flash_attention_2",
+                local_files_only=True
             )
         return TTSModelProvider._creator_model
 
     def get_synthesis_model(self) -> Qwen3TTSModel:
         """
-        Retrieves the 0.6B parameter model used for Vector Extraction and Synthesis.
-
-        Returns:
-            Qwen3TTSModel: The loaded Base model instance.
+        Initializes and returns the 0.6B Synthesis model.
         """
         if TTSModelProvider._synthesis_model is None:
             self._prepare_vram()
             repo = self.config.models.tts.base_repo_id
-            logger.info(f"Loading Synthesis Model (0.6B) from {repo}...")
+            local_path = self._get_local_path(repo)
+            
+            logger.info(f"Loading Synthesis Model (0.6B) directly from physical path: {local_path}")
             TTSModelProvider._synthesis_model = Qwen3TTSModel.from_pretrained(
-                repo, 
+                local_path, 
                 device_map=self.device, 
                 torch_dtype=self.precision,
-                attn_implementation="flash_attention_2"
+                attn_implementation="flash_attention_2",
+                local_files_only=True
             )
         return TTSModelProvider._synthesis_model
 
@@ -298,6 +357,59 @@ class InferenceEngine:
         self.active_seed = seed
         self.last_anchor_path = anchor_path
         
+    # def _core_synthesis(
+    #     self, 
+    #     text: str, 
+    #     output_path: Optional[str] = None,
+    #     temperature: Optional[float] = None,
+    #     top_p: Optional[float] = None,
+    #     repetition_penalty: Optional[float] = None
+    # ) -> str:
+    #     """
+    #     Executes the underlying text-to-speech synthesis process using the active identity vector
+    #     and specific generation hyperparameters.
+
+    #     Args:
+    #         text (str): The text string to synthesize.
+    #         output_path (Optional[str]): Specific path to save the generated audio. If None, a temporary path is generated.
+    #         temperature (Optional[float]): Sampling temperature to control randomness and pitch variability.
+    #         top_p (Optional[float]): Nucleus sampling probability threshold to constrain vocabulary selection.
+    #         repetition_penalty (Optional[float]): Penalty factor to reduce repeated acoustic tokens and alter speech rate.
+
+    #     Returns:
+    #         str: Path to the generated audio file.
+    #     """
+    #     if not self.active_identity or self.active_seed is None:
+    #         logger.error("Synthesis failed: Active identity is missing.")
+    #         raise ValueError("Identity incomplete (Vector or Seed missing).")
+
+    #     set_global_seed(self.active_seed)
+    #     model = self.tts_provider.get_synthesis_model()
+    #     full_lang = LANGUAGE_MAP.get(self.lang, "English")
+        
+    #     if not output_path:
+    #         output_path = os.path.join(self.config.paths.temp_dir, f"render_{int(time.time()*1000)}.wav")
+
+    #     logger.info(f"Rendering synthesis to {output_path}...")
+    #     if torch.cuda.is_available(): 
+    #         torch.cuda.synchronize()
+        
+    #     wavs, fs = model.generate_voice_clone(
+    #         text=text,
+    #         language=full_lang,
+    #         voice_clone_prompt=[self.active_identity],
+    #         temperature=temperature,
+    #         top_p=top_p,
+    #         repetition_penalty=repetition_penalty
+    #     )
+        
+    #     if torch.cuda.is_available(): 
+    #         torch.cuda.synchronize()
+            
+    #     sf.write(output_path, wavs[0], fs)
+    #     logger.info(f"Ending rendering synthesis")
+    #     return output_path
+    
     def _core_synthesis(
         self, 
         text: str, 
@@ -306,20 +418,6 @@ class InferenceEngine:
         top_p: Optional[float] = None,
         repetition_penalty: Optional[float] = None
     ) -> str:
-        """
-        Executes the underlying text-to-speech synthesis process using the active identity vector
-        and specific generation hyperparameters.
-
-        Args:
-            text (str): The text string to synthesize.
-            output_path (Optional[str]): Specific path to save the generated audio. If None, a temporary path is generated.
-            temperature (Optional[float]): Sampling temperature to control randomness and pitch variability.
-            top_p (Optional[float]): Nucleus sampling probability threshold to constrain vocabulary selection.
-            repetition_penalty (Optional[float]): Penalty factor to reduce repeated acoustic tokens and alter speech rate.
-
-        Returns:
-            str: Path to the generated audio file.
-        """
         if not self.active_identity or self.active_seed is None:
             logger.error("Synthesis failed: Active identity is missing.")
             raise ValueError("Identity incomplete (Vector or Seed missing).")
@@ -331,9 +429,15 @@ class InferenceEngine:
         if not output_path:
             output_path = os.path.join(self.config.paths.temp_dir, f"render_{int(time.time()*1000)}.wav")
 
-        logger.info(f"Rendering synthesis to {output_path}...")
+        logger.info(f"▶️ [ENGINE TRACE] Starting single synthesis.")
+        logger.info(f"   ┣ Text: '{text[:50]}...' (Len: {len(text)})")
+        logger.info(f"   ┣ Params: Temp={temperature}, TopP={top_p}, Penalty={repetition_penalty}")
+        logger.info(f"   ┗ Output: {output_path}")
+
         if torch.cuda.is_available(): 
             torch.cuda.synchronize()
+        
+        logger.info("🔥 [GPU IN] Invoking model.generate_voice_clone...")
         
         wavs, fs = model.generate_voice_clone(
             text=text,
@@ -347,8 +451,9 @@ class InferenceEngine:
         if torch.cuda.is_available(): 
             torch.cuda.synchronize()
             
+        logger.info("✅ [GPU OUT] Generation successful. Writing to disk...")
         sf.write(output_path, wavs[0], fs)
-        logger.info(f"Ending rendering synthesis")
+        logger.info(f"⏹️ [ENGINE TRACE] Single synthesis completed.")
         return output_path
 
     def render(self, text: str, output_path: Optional[str] = None) -> str:
@@ -388,6 +493,70 @@ class InferenceEngine:
         
 
     
+    # def _core_synthesis_batch(
+    #     self, 
+    #     texts: List[str], 
+    #     output_paths: List[str],
+    #     temperature: Optional[float] = None,
+    #     top_p: Optional[float] = None,
+    #     repetition_penalty: Optional[float] = None
+    # ) -> List[str]:
+    #     """
+    #     Executes the underlying text-to-speech synthesis process for a batch of text strings
+    #     using the active identity vector and specific generation hyperparameters. 
+        
+    #     This method leverages the native batching capabilities of the Qwen3-TTS engine by 
+    #     expanding the language parameters and executing a single forward pass on the GPU.
+
+    #     Args:
+    #         texts (List[str]): The ordered sequence of text strings to synthesize simultaneously.
+    #         output_paths (List[str]): The exact absolute file paths where each generated audio 
+    #                                   tensor should be persisted. The length of this list must 
+    #                                   strictly match the length of the texts list.
+    #         temperature (Optional[float]): Sampling temperature to control randomness and pitch variability.
+    #         top_p (Optional[float]): Nucleus sampling probability threshold to constrain vocabulary selection.
+    #         repetition_penalty (Optional[float]): Penalty factor to reduce repeated acoustic tokens.
+
+    #     Returns:
+    #         List[str]: A list containing the absolute paths to the generated audio files, 
+    #                    corresponding exactly to the order of the input texts.
+
+    #     Raises:
+    #         ValueError: If the length of texts does not match the length of output_paths, 
+    #                     or if the active identity vector or seed is missing from the engine state.
+    #     """
+    #     if len(texts) != len(output_paths):
+    #         raise ValueError("The number of input texts must strictly match the number of output paths.")
+
+    #     if not self.active_identity or self.active_seed is None:
+    #         raise ValueError("Identity incomplete. Vector or Seed missing from the engine state.")
+
+    #     set_global_seed(self.active_seed)
+        
+    #     model = self.tts_provider.get_synthesis_model()
+    #     full_lang_string = LANGUAGE_MAP.get(self.lang, "English")
+    #     full_lang_batch = [full_lang_string] * len(texts)
+
+    #     if torch.cuda.is_available(): 
+    #         torch.cuda.synchronize()
+        
+    #     wavs, fs = model.generate_voice_clone(
+    #         text=texts,
+    #         language=full_lang_batch,
+    #         voice_clone_prompt=[self.active_identity],
+    #         temperature=temperature,
+    #         top_p=top_p,
+    #         repetition_penalty=repetition_penalty
+    #     )
+        
+    #     if torch.cuda.is_available(): 
+    #         torch.cuda.synchronize()
+
+    #     for audio_tensor, target_path in zip(wavs, output_paths):
+    #         sf.write(target_path, audio_tensor, fs)
+
+    #     return output_paths
+    
     def _core_synthesis_batch(
         self, 
         texts: List[str], 
@@ -396,30 +565,6 @@ class InferenceEngine:
         top_p: Optional[float] = None,
         repetition_penalty: Optional[float] = None
     ) -> List[str]:
-        """
-        Executes the underlying text-to-speech synthesis process for a batch of text strings
-        using the active identity vector and specific generation hyperparameters. 
-        
-        This method leverages the native batching capabilities of the Qwen3-TTS engine by 
-        expanding the language parameters and executing a single forward pass on the GPU.
-
-        Args:
-            texts (List[str]): The ordered sequence of text strings to synthesize simultaneously.
-            output_paths (List[str]): The exact absolute file paths where each generated audio 
-                                      tensor should be persisted. The length of this list must 
-                                      strictly match the length of the texts list.
-            temperature (Optional[float]): Sampling temperature to control randomness and pitch variability.
-            top_p (Optional[float]): Nucleus sampling probability threshold to constrain vocabulary selection.
-            repetition_penalty (Optional[float]): Penalty factor to reduce repeated acoustic tokens.
-
-        Returns:
-            List[str]: A list containing the absolute paths to the generated audio files, 
-                       corresponding exactly to the order of the input texts.
-
-        Raises:
-            ValueError: If the length of texts does not match the length of output_paths, 
-                        or if the active identity vector or seed is missing from the engine state.
-        """
         if len(texts) != len(output_paths):
             raise ValueError("The number of input texts must strictly match the number of output paths.")
 
@@ -432,8 +577,15 @@ class InferenceEngine:
         full_lang_string = LANGUAGE_MAP.get(self.lang, "English")
         full_lang_batch = [full_lang_string] * len(texts)
 
+        logger.info(f"▶️ [ENGINE TRACE] Starting BATCH synthesis (Size: {len(texts)}).")
+        logger.info(f"   ┣ Params: Temp={temperature}, TopP={top_p}, Penalty={repetition_penalty}")
+        for i, t in enumerate(texts):
+            logger.info(f"   ┣ Item {i}: '{t[:40]}...'")
+
         if torch.cuda.is_available(): 
             torch.cuda.synchronize()
+        
+        logger.info("🔥 [GPU BATCH IN] Invoking model.generate_voice_clone for cluster...")
         
         wavs, fs = model.generate_voice_clone(
             text=texts,
@@ -447,9 +599,11 @@ class InferenceEngine:
         if torch.cuda.is_available(): 
             torch.cuda.synchronize()
 
+        logger.info("✅ [GPU BATCH OUT] Batch generation successful. Writing items to disk...")
         for audio_tensor, target_path in zip(wavs, output_paths):
             sf.write(target_path, audio_tensor, fs)
 
+        logger.info("⏹️ [ENGINE TRACE] Batch synthesis completed.")
         return output_paths
 
     def render_batch(self, texts: List[str], output_paths: List[str]) -> List[str]:

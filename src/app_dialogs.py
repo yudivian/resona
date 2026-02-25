@@ -14,7 +14,7 @@ from src.ui.dialogs_create import render_create
 from src.ui.dialogs_editor import render_editor
 from src.ui.dialogs_monitor import render_monitor
 
-MAX_DIALOG_LINES = 15
+MAX_DIALOG_LINES = 50
 POLLING_INTERVAL_SEC = 10.0
 PROJECTS_PER_PAGE = 8
 LINES_PER_PAGE = 10

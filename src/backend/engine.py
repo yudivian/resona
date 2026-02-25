@@ -424,59 +424,7 @@ class InferenceEngine:
 
         return text
 
-    # def _core_synthesis(
-    #     self,
-    #     text: str,
-    #     output_path: Optional[str] = None,
-    #     temperature: Optional[float] = None,
-    #     top_p: Optional[float] = None,
-    #     repetition_penalty: Optional[float] = None
-    # ) -> str:
-    #     """
-    #     Executes the underlying text-to-speech synthesis process using the active identity vector
-    #     and specific generation hyperparameters.
-
-    #     Args:
-    #         text (str): The text string to synthesize.
-    #         output_path (Optional[str]): Specific path to save the generated audio. If None, a temporary path is generated.
-    #         temperature (Optional[float]): Sampling temperature to control randomness and pitch variability.
-    #         top_p (Optional[float]): Nucleus sampling probability threshold to constrain vocabulary selection.
-    #         repetition_penalty (Optional[float]): Penalty factor to reduce repeated acoustic tokens and alter speech rate.
-
-    #     Returns:
-    #         str: Path to the generated audio file.
-    #     """
-    #     if not self.active_identity or self.active_seed is None:
-    #         logger.error("Synthesis failed: Active identity is missing.")
-    #         raise ValueError("Identity incomplete (Vector or Seed missing).")
-
-    #     set_global_seed(self.active_seed)
-    #     model = self.tts_provider.get_synthesis_model()
-    #     full_lang = LANGUAGE_MAP.get(self.lang, "English")
-
-    #     if not output_path:
-    #         output_path = os.path.join(self.config.paths.temp_dir, f"render_{int(time.time()*1000)}.wav")
-
-    #     logger.info(f"Rendering synthesis to {output_path}...")
-    #     if torch.cuda.is_available():
-    #         torch.cuda.synchronize()
-
-    #     wavs, fs = model.generate_voice_clone(
-    #         text=text,
-    #         language=full_lang,
-    #         voice_clone_prompt=[self.active_identity],
-    #         temperature=temperature,
-    #         top_p=top_p,
-    #         repetition_penalty=repetition_penalty
-    #     )
-
-    #     if torch.cuda.is_available():
-    #         torch.cuda.synchronize()
-
-    #     sf.write(output_path, wavs[0], fs)
-    #     logger.info(f"Ending rendering synthesis")
-    #     return output_path
-
+    
     def _core_synthesis(
         self,
         text: str,
@@ -569,69 +517,7 @@ class InferenceEngine:
             repetition_penalty=emotion_params.get("penalty"),
         )
 
-    # def _core_synthesis_batch(
-    #     self,
-    #     texts: List[str],
-    #     output_paths: List[str],
-    #     temperature: Optional[float] = None,
-    #     top_p: Optional[float] = None,
-    #     repetition_penalty: Optional[float] = None
-    # ) -> List[str]:
-    #     """
-    #     Executes the underlying text-to-speech synthesis process for a batch of text strings
-    #     using the active identity vector and specific generation hyperparameters.
-
-    #     This method leverages the native batching capabilities of the Qwen3-TTS engine by
-    #     expanding the language parameters and executing a single forward pass on the GPU.
-
-    #     Args:
-    #         texts (List[str]): The ordered sequence of text strings to synthesize simultaneously.
-    #         output_paths (List[str]): The exact absolute file paths where each generated audio
-    #                                   tensor should be persisted. The length of this list must
-    #                                   strictly match the length of the texts list.
-    #         temperature (Optional[float]): Sampling temperature to control randomness and pitch variability.
-    #         top_p (Optional[float]): Nucleus sampling probability threshold to constrain vocabulary selection.
-    #         repetition_penalty (Optional[float]): Penalty factor to reduce repeated acoustic tokens.
-
-    #     Returns:
-    #         List[str]: A list containing the absolute paths to the generated audio files,
-    #                    corresponding exactly to the order of the input texts.
-
-    #     Raises:
-    #         ValueError: If the length of texts does not match the length of output_paths,
-    #                     or if the active identity vector or seed is missing from the engine state.
-    #     """
-    #     if len(texts) != len(output_paths):
-    #         raise ValueError("The number of input texts must strictly match the number of output paths.")
-
-    #     if not self.active_identity or self.active_seed is None:
-    #         raise ValueError("Identity incomplete. Vector or Seed missing from the engine state.")
-
-    #     set_global_seed(self.active_seed)
-
-    #     model = self.tts_provider.get_synthesis_model()
-    #     full_lang_string = LANGUAGE_MAP.get(self.lang, "English")
-    #     full_lang_batch = [full_lang_string] * len(texts)
-
-    #     if torch.cuda.is_available():
-    #         torch.cuda.synchronize()
-
-    #     wavs, fs = model.generate_voice_clone(
-    #         text=texts,
-    #         language=full_lang_batch,
-    #         voice_clone_prompt=[self.active_identity],
-    #         temperature=temperature,
-    #         top_p=top_p,
-    #         repetition_penalty=repetition_penalty
-    #     )
-
-    #     if torch.cuda.is_available():
-    #         torch.cuda.synchronize()
-
-    #     for audio_tensor, target_path in zip(wavs, output_paths):
-    #         sf.write(target_path, audio_tensor, fs)
-
-    #     return output_paths
+    
 
     def _core_synthesis_batch(
         self,

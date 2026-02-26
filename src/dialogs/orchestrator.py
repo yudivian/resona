@@ -405,11 +405,13 @@ class DialogOrchestrator:
         
         if success:
             relative_master_path = str(output_path.relative_to(project_root))
+            relative_mp3_path = str(output_path.with_suffix('.mp3').relative_to(project_root))
             
             db = BeaverDB(settings.paths.db_file)
             projects_dict = db.dict("dialog_projects")
             
             data["merged_audio_path"] = relative_master_path
+            data["merged_mp3_path"] = relative_mp3_path
             projects_dict[project_id] = data
             
             return relative_master_path

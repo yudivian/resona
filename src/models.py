@@ -384,8 +384,10 @@ class DialogProject(BaseModel):
     
     project_path: str
     merged_audio_path: Optional[str] = None
+    merged_mp3_path: Optional[str] = None
     
     created_at: float = Field(default_factory=time.time)
     updated_at: float = Field(default_factory=time.time)
+    expires_at: Optional[float] = None
     
 

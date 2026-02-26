@@ -181,17 +181,24 @@ def render_monitor(navigate_to: Callable[[str, Optional[str]], None]) -> None:
     st.divider()
 
     master_path_str = raw_data.get("merged_audio_path")
+    mergedmp3_path_str = raw_data.get("merged_mp3_path")
+    
     if master_path_str:
         master_full_path = Path(project.project_path) / master_path_str
         if master_full_path.exists():
             with st.container(border=True):
-                st.markdown("**Master Wav Output**")
-                mc1, mc2 = st.columns([5, 1], vertical_alignment="center")
-                with mc1:
-                    st.audio(str(master_full_path))
-                with mc2:
+                st.markdown("**Master Audio Output**")
+                st.audio(str(master_full_path))
+                mc1, mc2 = st.columns([1, 1], vertical_alignment="center")
+                with mc1:                    
                     with open(master_full_path, "rb") as f: master_bytes = f.read()
                     st.download_button(label="⬇️ WAV", data=master_bytes, file_name=f"master_{project.definition.name.replace(' ', '_')}.wav", mime="audio/wav", key=f"dl_master_{project.id}", use_container_width=True)
+                with mc2:
+                    if mergedmp3_path_str:
+                        mastermp3_full_path = Path(project.project_path) / mergedmp3_path_str
+                        if mastermp3_full_path.exists():
+                            with open(mastermp3_full_path, "rb") as f: mp3master_bytes = f.read()
+                            st.download_button(label="⬇️ MP3", data=mp3master_bytes, file_name=f"master_{project.definition.name.replace(' ', '_')}.mp3", mime="audio/mpeg", key=f"dl_mp3_master_{project.id}", use_container_width=True)
             st.divider()
 
     

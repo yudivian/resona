@@ -19,8 +19,7 @@ def delete_confirmation_dialog(project_id: str, project_name: str) -> None:
     col_a, col_b = st.columns(2)
     with col_a:
         if st.button("Yes, Delete", type="primary", use_container_width=True):
-            st.session_state.db.dict("dialog_projects")[project_id] = None
-            del st.session_state.db.dict("dialog_projects")[project_id]
+            st.session_state.orchestrator.delete_project(project_id)
             st.success("Project purged.")
             time.sleep(0.5)
             st.rerun()
@@ -138,18 +137,16 @@ def render_dashboard(navigate_to: Callable[[str, Optional[str]], None]) -> None:
                 
                 st.divider()
                 
-                b_cols = st.columns(5)
+                b_cols = st.columns(6)
                 is_active = project.status in [ProjectStatus.STARTING, ProjectStatus.GENERATING]
                 can_modify = not is_active
 
                 with b_cols[0]:
-                    if st.button("👁️ Monitor", key=f"mon_{project.id}", use_container_width=True):
+                    if st.button("👁️", key=f"mon_{project.id}", use_container_width=True,help="Monitor Project"):
                         navigate_to("monitor", project.id)
-                with b_cols[1]:
-                    if st.button("✏️ Edit", key=f"ed_{project.id}", use_container_width=True, disabled=not can_modify):
-                        navigate_to("editor", project.id)
                 
-                with b_cols[2]:
+                
+                with b_cols[1]:
                     script_json = project.definition.export_as_template()
                     st.download_button(
                         label="📄 JSON", 
@@ -157,10 +154,11 @@ def render_dashboard(navigate_to: Callable[[str, Optional[str]], None]) -> None:
                         file_name=f"{project.definition.name.replace(' ', '_')}.json", 
                         mime="application/json", 
                         use_container_width=True,
+                        help="JSON Script",
                         key=f"json_{project.id}"
                     )
                 
-                with b_cols[3]:
+                with b_cols[2]:
                     master_path_str = getattr(project, "merged_audio_path", None)
                     show_audio = False
                     if master_path_str:
@@ -172,18 +170,46 @@ def render_dashboard(navigate_to: Callable[[str, Optional[str]], None]) -> None:
                         with open(master_file, "rb") as f:
                             audio_bytes = f.read()
                         st.download_button(
-                            label="🔊 Audio",
+                            label="🔊 WAV",
                             data=audio_bytes,
                             file_name=f"master_{project.definition.name.replace(' ', '_')}.wav",
                             mime="audio/wav",
                             use_container_width=True,
+                            help="WAV Master File",
                             key=f"wav_{project.id}"
                         )
                     else:
                         st.button("🔊 Audio", use_container_width=True, disabled=True, help="Full master audio not yet generated.",key=f"wav_{project.id}")
-                                  
+                
+                with b_cols[3]:
+                    mp3_path_str = getattr(project, "merged_mp3_path", None)
+                    mp3_audio = False
+                    if mp3_path_str:
+                        mp3_file = Path(project.project_path) / mp3_path_str
+                        if mp3_file.exists():
+                            mp3_audio = True
+                    
+                    if mp3_audio:
+                        with open(mp3_file, "rb") as f:
+                            mp3_bytes = f.read()
+                        st.download_button(
+                            label="🔊 MP3",
+                            data=mp3_bytes,
+                            file_name=f"master_{project.definition.name.replace(' ', '_')}.mp3",
+                            mime="audio/mp3g",
+                            use_container_width=True,
+                            help="MP3 Master File",
+                            key=f"mp3_{project.id}"
+                        )
+                    else:
+                        st.button("🔊 MP3", use_container_width=True, disabled=True, help="Full master audio not yet generated.",key=f"mp3_{project.id}")
+                
                 with b_cols[4]:
-                    if st.button("🗑️ Delete", key=f"del_{project.id}", use_container_width=True, disabled=not can_modify):
+                    if st.button("✏️", key=f"ed_{project.id}", use_container_width=True,help="Edit Project", disabled=not can_modify):
+                        navigate_to("editor", project.id)                  
+                
+                with b_cols[5]:
+                    if st.button("🗑️", key=f"del_{project.id}", use_container_width=True,help="Delete Project", disabled=not can_modify):
                         delete_confirmation_dialog(project.id, project.definition.name)
 
     if pages > 1:

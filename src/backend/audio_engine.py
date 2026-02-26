@@ -82,17 +82,63 @@ class AudioEngine:
         noise = torch.randn(1, num_frames) * level
         return noise
 
-    def merge_segments(self, segments: List[AudioSegmentConfig], output_path: Path) -> bool:
+    # def merge_segments(self, segments: List[AudioSegmentConfig], output_path: Path) -> bool:
+    #     """
+    #     Merges a sequence of audio segments into a single master file.
+    #     This method is completely agnostic to application-level logic.
+
+    #     Args:
+    #         segments (List[AudioSegmentConfig]): Ordered list of audio configurations.
+    #         output_path (Path): Final destination for the merged WAV file.
+
+    #     Returns:
+    #         bool: True if the file was successfully written, False otherwise.
+    #     """
+    #     timeline: List[torch.Tensor] = []
+        
+    #     try:
+    #         for seg in segments:
+    #             if not seg.path.exists():
+    #                 continue
+                
+    #             waveform, sr = torchaudio.load(str(seg.path))
+                
+    #             if sr != self.target_sample_rate:
+    #                 resampler = torchaudio.transforms.Resample(sr, self.target_sample_rate)
+    #                 waveform = resampler(waveform)
+                
+    #             waveform = self._apply_fades(waveform, seg.fade_in_ms, seg.fade_out_ms)
+    #             timeline.append(waveform)
+                
+    #             if seg.post_delay_ms > 0:
+    #                 gap = self._generate_room_tone(seg.post_delay_ms, seg.room_tone_level)
+    #                 timeline.append(gap)
+            
+    #         if not timeline:
+    #             return False
+                
+    #         master_waveform = torch.cat(timeline, dim=1)
+            
+    #         output_path.parent.mkdir(parents=True, exist_ok=True)
+    #         torchaudio.save(str(output_path), master_waveform, self.target_sample_rate)
+            
+    #         return True
+            
+    #     except Exception:
+    #         return False
+    
+    def merge_segments(self, segments: List['AudioSegmentConfig'], output_path: Path) -> bool:
         """
-        Merges a sequence of audio segments into a single master file.
-        This method is completely agnostic to application-level logic.
+        Concatenates an ordered list of audio segments into a single continuous 
+        master timeline, exporting both a monaural WAV file and a stereo MP3 file.
 
         Args:
             segments (List[AudioSegmentConfig]): Ordered list of audio configurations.
-            output_path (Path): Final destination for the merged WAV file.
+            output_path (Path): Final destination for the merged WAV file. The MP3 
+                                equivalent will be saved in the same directory.
 
         Returns:
-            bool: True if the file was successfully written, False otherwise.
+            bool: True if both files were successfully written, False otherwise.
         """
         timeline: List[torch.Tensor] = []
         
@@ -118,9 +164,14 @@ class AudioEngine:
                 return False
                 
             master_waveform = torch.cat(timeline, dim=1)
-            
             output_path.parent.mkdir(parents=True, exist_ok=True)
+            
             torchaudio.save(str(output_path), master_waveform, self.target_sample_rate)
+            
+            stereo_waveform = master_waveform.repeat(2, 1)
+            mp3_path = output_path.with_suffix('.mp3')
+            
+            torchaudio.save(str(mp3_path), stereo_waveform, self.target_sample_rate)
             
             return True
             

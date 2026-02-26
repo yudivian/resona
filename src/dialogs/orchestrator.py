@@ -4,6 +4,7 @@ import sys
 import psutil
 import shutil
 import time
+import logging
 from pathlib import Path
 from typing import Optional, Dict, Any
 from beaver import BeaverDB
@@ -12,7 +13,7 @@ from src.config import settings
 from src.models import DialogProject, ProjectStatus, LineStatus
 from src.backend.audio_engine import AudioEngine, AudioSegmentConfig
 
-import logging
+
 logger = logging.getLogger("Orchestrator")
 logger.setLevel(logging.DEBUG)
 
@@ -417,3 +418,37 @@ class DialogOrchestrator:
             return relative_master_path
             
         return None
+    
+    def add_project(self, project: DialogProject) -> str:
+        """
+        Registers a newly instantiated dialog project into the persistence layer.
+
+        Delegates the physical database transaction to the internal safe-write 
+        mechanism, ensuring atomic operations and transient failure recoveries.
+
+        Args:
+            project (DialogProject): The validated project entity.
+
+        Returns:
+            str: The canonical identifier assigned to the new project.
+        """
+        self._write_project_data_safe(project.id, project.model_dump())
+        return project.id
+
+    def update_project(self, project: DialogProject) -> bool:
+        """
+        Executes a destructive upsert operation on an existing dialog project.
+
+        Leverages the internal asset purging mechanisms to strictly guarantee 
+        the termination of any active OS-level processes and the complete 
+        annihilation of legacy audio directories before committing the modified 
+        script state to the database.
+
+        Args:
+            project (DialogProject): The mutated project entity containing the updated script.
+
+        Returns:
+            bool: True mapping a successful atomic commit, False otherwise.
+        """
+        self.purge_project_assets(project.id)
+        return self._write_project_data_safe(project.id, project.model_dump())

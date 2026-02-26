@@ -3,6 +3,7 @@ import io
 import logging
 import uuid
 import json
+import time
 from typing import List, Optional, Any, Dict
 from fastapi import APIRouter, HTTPException, Query, Depends
 from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
@@ -18,7 +19,18 @@ from src.models import (
     TaskStatusResponse,
     SynthesisRequest, 
     EmotionSynthesisRequest,
-    DialogScript
+    DialogScript,
+    DialogProject,
+    ProjectSource,
+    ProjectStatus,
+    LineState,
+    LineStatus,
+    DialogGenerationResponse,
+    DialogStatusResponse,
+    DialogOutputs,
+    DialogProgress,
+    LineStatusTracker,
+    LineIdentifier
 )
 
 from src.backend.store import VoiceStore
@@ -28,7 +40,8 @@ from src.api.dependencies import (
     get_embed_engine,
     get_config,
     get_emotion_manager,
-    get_tts_provider
+    get_tts_provider,
+    get_orchestrator
 )
 from src.emotions.manager import EmotionManager
 from src.backend.engine import InferenceEngine
@@ -714,3 +727,136 @@ def validate_dialog_template(
         raise HTTPException(status_code=400, detail=str(e))
     except ValidationError:
         raise HTTPException(status_code=422, detail="Schema validation failed.")
+    
+    import time
+from pathlib import Path
+
+@router.post("/dialogs/generate", status_code=202, response_model=DialogGenerationResponse)
+def generate_dialog_project(
+    payload: Dict[str, Any],
+    ttl_hours: int = Query(24, ge=1, le=720, description="Time-to-live in hours before garbage collection."),
+    config: Any = Depends(get_config),
+    orchestrator: Any = Depends(get_orchestrator)
+):
+    """
+    Initializes an asynchronous dialog synthesis process.
+
+    This endpoint maps directly to the UI's import logic. It explicitly generates 
+    the validated DialogScript definition first, leverages its identifier to construct 
+    the physical workspace boundary, and finally maps the initialized states into 
+    the overarching DialogProject entity before dispatching the background worker.
+
+    Args:
+        payload (Dict[str, Any]): The dictionary mapping of the dialog script.
+        ttl_hours (int): The maximum lifespan of the generated assets in hours.
+        config (Any): Injected global application configuration for path resolution.
+        orchestrator (Any): Injected service delegating detached OS-level workers.
+
+    Returns:
+        DialogGenerationResponse: An acknowledgment envelope containing the allocated 
+                                project identifier, expiration timestamp, and line mappings.
+
+    Raises:
+        HTTPException (400): If the inner dictionary structure violates domain logic integrity.
+        HTTPException (422): If the schema evaluation fails strict typing.
+        HTTPException (500): If filesystem allocation or database persistence operations fail.
+    """
+    try:
+        json_string = json.dumps(payload)
+        script = DialogScript.import_template(json_string)
+        workspace_dir = str(Path(config.paths.dialogspace_dir) / script.id)
+        expiration_timestamp = time.time() + (ttl_hours * 3600)
+        
+        project = DialogProject(
+            source=ProjectSource.API,
+            definition=script,
+            states=[
+                LineState(line_id=line.id, index=line.index, status=LineStatus.PENDING) 
+                for line in script.script
+            ],
+            project_path=workspace_dir,
+            status=ProjectStatus.IDLE,
+            expires_at=expiration_timestamp
+        )
+        
+        orchestrator.add_project(project)
+        orchestrator.start_generation(project.id)
+        
+        return DialogGenerationResponse(
+            project_id=project.id,
+            expires_at=project.expires_at,
+            message="Generation task successfully dispatched to the background worker.",
+            lines=[
+                LineIdentifier(index=state.index, line_id=state.line_id) 
+                for state in project.states
+            ]
+        )
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except ValidationError:
+        raise HTTPException(status_code=422, detail="Schema validation failed.")
+    except Exception as e:
+        logger.error(f"Generation initialization failed: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error during project initialization.")
+
+
+@router.get("/dialogs/{project_id}/status", response_model=DialogStatusResponse)
+def get_dialog_project_status(
+    project_id: str,
+    orchestrator: Any = Depends(get_orchestrator)
+):
+    """
+    Retrieves the highly optimized real-time execution status of a project.
+
+    This endpoint acts as the primary polling target. It returns a lightweight 
+    payload containing the execution state, progress metrics, and line progression, 
+    deliberately omitting the heavy script definition to minimize bandwidth 
+    during high-frequency client polling.
+
+    Args:
+        project_id (str): The canonical identifier of the target dialog project.
+        orchestrator (Any): Injected service providing safe data access methods.
+
+    Returns:
+        DialogStatusResponse: A lean status envelope with progress metrics, output paths, 
+                              and a granular tracker array for individual lines.
+
+    Raises:
+        HTTPException (404): If the provided project_id does not exist.
+    """
+    project_data = orchestrator.get_project_data_safe(project_id)
+    
+    if not project_data:
+        raise HTTPException(
+            status_code=404, 
+            detail=f"Dialog project with ID {project_id} not found."
+        )
+    
+    states = project_data.get("states", [])
+    total_lines = len(states)
+    completed_lines = sum(1 for state in states if state.get("status") == "COMPLETED")
+    
+    return DialogStatusResponse(
+        project_id=project_data.get("id"),
+        status=project_data.get("status"),
+        progress=DialogProgress(
+            total_lines=total_lines,
+            completed_lines=completed_lines,
+            pending_lines=total_lines - completed_lines
+        ),
+        outputs=DialogOutputs(
+            merged_audio_path=project_data.get("merged_audio_path"),
+            merged_mp3_path=project_data.get("merged_mp3_path")
+        ),
+        line_states=[
+            LineStatusTracker(
+                index=state.get("index"),
+                line_id=state.get("line_id"),
+                status=state.get("status"),
+                audio_path=state.get("audio_path"),
+                error=state.get("error")
+            )
+            for state in states
+        ]
+    )

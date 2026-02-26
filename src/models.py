@@ -392,4 +392,88 @@ class DialogProject(BaseModel):
     updated_at: float = Field(default_factory=time.time)
     expires_at: Optional[float] = None
     
+    @classmethod
+    def import_project(
+        cls, 
+        json_content: str, 
+        base_dir: str,
+        source: ProjectSource = ProjectSource.UI, 
+        ttl_hours: Optional[int] = None
+    ) -> "DialogProject":
+        """
+        Factory method to safely instantiate a DialogProject from a raw JSON payload.
+
+        Enforces a strict architectural boundary by decoupling the script definition 
+        from the execution instance. It leverages the script's canonical identifier 
+        to allocate the physical filesystem workspace, while allowing the underlying 
+        model to autonomously generate a distinct execution identifier for the project.
+
+        Args:
+            json_content (str): The raw JSON string representing the script template.
+            base_dir (str): The absolute physical root directory for dialog workspaces.
+            source (ProjectSource, optional): The domain origin of the request. Defaults to UI.
+            ttl_hours (Optional[int], optional): Maximum lifespan in hours for API requests.
+
+        Returns:
+            DialogProject: A fully configured project instance mapped to its script-bound workspace.
+        """
+        import time
+        from pathlib import Path
+
+        script = DialogScript.import_template(json_content)
+        workspace_dir = str(Path(base_dir) / script.id)
+
+        expires_at = None
+        if source == ProjectSource.API and ttl_hours:
+            expires_at = time.time() + (ttl_hours * 3600)
+
+        return cls(
+            source=source,
+            definition=script,
+            states=[
+                LineState(line_id=line.id, index=line.index, status=LineStatus.PENDING) 
+                for line in script.script
+            ],
+            project_path=workspace_dir,
+            status=ProjectStatus.IDLE,
+            expires_at=expires_at
+        )
+        
+class LineIdentifier(BaseModel):
+    """Mapping of script sequence index to its technical line identifier."""
+    index: int
+    line_id: str
+
+class DialogGenerationResponse(BaseModel):
+    """Response envelope for a successfully dispatched dialog project."""
+    project_id: str
+    expires_at: Optional[float]
+    message: str
+    lines: List[LineIdentifier]
+
+class DialogProgress(BaseModel):
+    """Metrics for tracking completion percentage."""
+    total_lines: int
+    completed_lines: int
+    pending_lines: int
+
+class DialogOutputs(BaseModel):
+    """Master asset paths available upon project completion."""
+    merged_audio_path: Optional[str] = None
+    merged_mp3_path: Optional[str] = None
+
+class LineStatusTracker(LineIdentifier):
+    """Lightweight tracker for individual dialogue lines."""
+    status: LineStatus
+    audio_path: Optional[str] = None
+    error: Optional[str] = None
+
+class DialogStatusResponse(BaseModel):
+    """Optimized, read-only status envelope for high-frequency frontend polling."""
+    project_id: str
+    status: ProjectStatus
+    progress: DialogProgress
+    outputs: DialogOutputs
+    line_states: List[LineStatusTracker]
+    
 

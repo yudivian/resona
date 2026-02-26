@@ -6,6 +6,9 @@ from src.config import settings, AppConfig
 from src.backend.store import VoiceStore
 from src.emotions.manager import EmotionManager
 
+from beaver import BeaverDB
+from src.dialogs.orchestrator import DialogOrchestrator
+
 logger = logging.getLogger(__name__)
 
 @lru_cache()
@@ -111,3 +114,19 @@ def get_tts_provider() -> Optional[Any]:
     except Exception as e:
         logger.critical(f"Failed to initialize TTS Model during cold start: {e}")
         return None
+    
+@lru_cache()
+def get_orchestrator() -> DialogOrchestrator:
+    """
+    Provides a stateless singleton instance of the DialogOrchestrator.
+
+    The orchestrator manages absolute process detachment and OS-level subprocess 
+    lifecycle for asynchronous audio synthesis tasks. Caching this instance ensures 
+    that the same validation and process-hunting logical boundaries are applied 
+    uniformly across all execution control endpoints.
+
+    Returns:
+        DialogOrchestrator: The service responsible for background worker delegation.
+    """
+    logger.debug("Initializing DialogOrchestrator for API request.")
+    return DialogOrchestrator()

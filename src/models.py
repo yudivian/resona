@@ -333,6 +333,8 @@ class DialogScript(BaseModel):
             if idx in seen_indices:
                 raise ValueError(f"Duplicate index detected: {idx}. Line order must be unique.")
             seen_indices.add(idx)
+        
+        cls(**data)
             
         return data
     

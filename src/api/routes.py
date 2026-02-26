@@ -2,10 +2,12 @@ import os
 import io
 import logging
 import uuid
+import json
 from typing import List, Optional, Any, Dict
 from fastapi import APIRouter, HTTPException, Query, Depends
 from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
 from fastapi import BackgroundTasks 
+from pydantic import ValidationError
 
 from src.models import (
     VoiceSummary,
@@ -15,7 +17,8 @@ from src.models import (
     IntensifierSummary,
     TaskStatusResponse,
     SynthesisRequest, 
-    EmotionSynthesisRequest
+    EmotionSynthesisRequest,
+    DialogScript
 )
 
 from src.backend.store import VoiceStore
@@ -29,6 +32,7 @@ from src.api.dependencies import (
 )
 from src.emotions.manager import EmotionManager
 from src.backend.engine import InferenceEngine
+
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -616,3 +620,97 @@ async def enqueue_emotional_synthesis(
     )
     
     return {"task_id": task_id, "status": "pending"}
+
+@router.post("/dialogs/validate")
+def validate_dialog_template(
+    payload: Dict[str, Any],
+    store: VoiceStore = Depends(get_store),
+    manager: EmotionManager = Depends(get_emotion_manager)
+):
+    """
+    Evaluates a dialog script payload for both structural integrity and system resource availability.
+
+    This endpoint operates as a dry-run validation barrier, ensuring that external API requests 
+    are fully actionable before they are dispatched to the asynchronous orchestration queues or 
+    reach the GPU level. The validation process is executed in a two-phase pipeline.
+
+    Phase 1 (Structural Validation):
+    The payload is serialized into a string and evaluated against the DialogScript factory method. 
+    This phase strictly verifies schema compliance, confirming the presence of mandatory fields, 
+    the correct typing of arrays, and the uniqueness of temporal execution indices across all lines.
+    Failures in this phase result in immediate HTTP exceptions (400 or 422).
+
+    Phase 2 (Resource Validation):
+    Upon structural confirmation, the endpoint extracts all referenced canonical IDs for voices, 
+    emotions, and acoustic intensifiers utilized within the timeline. It subsequently queries the 
+    injected singleton instances of the VoiceStore and EmotionManager to verify physical availability.
+    If requested resources are absent from the host system, the endpoint gracefully returns a detailed 
+    audit payload mapping the exact missing dependencies without raising HTTP faults, enabling the 
+    client application to prompt targeted corrections.
+
+    Args:
+        payload (Dict[str, Any]): The raw JSON dictionary representing the dialog configuration.
+        store (VoiceStore): Injected persistence controller managing voice identity profiles.
+        manager (EmotionManager): Injected logic controller mapping emotional prosody states.
+
+    Returns:
+        Dict[str, Any]: A structured audit response indicating boolean validity. If invalid due 
+                        to missing dependencies, it provides a categorized manifest of unavailable 
+                        canonical identifiers.
+
+    Raises:
+        HTTPException (400): If the payload exhibits logical structural violations such as duplicate indices.
+        HTTPException (422): If the payload violates strict Pydantic schema typing definitions.
+    """
+    try:
+        json_string = json.dumps(payload)
+        clean_data = DialogScript.validate_template(json_string)
+        
+        missing_voices = []
+        missing_emotions = []
+        missing_intensities = []
+        
+        used_voices = set()
+        used_emotions = set()
+        used_intensities = set()
+        
+        for line in clean_data.get("script", []):
+            if "voice_id" in line:
+                used_voices.add(line["voice_id"])
+            if "emotion" in line and line["emotion"]:
+                used_emotions.add(line["emotion"])
+            if "intensity" in line and line["intensity"]:
+                used_intensities.add(line["intensity"])
+                
+        for vid in used_voices:
+            if not store.get_profile(vid):
+                missing_voices.append(vid)
+                
+        for eid in used_emotions:
+            if eid not in manager.catalog.get("emotions", {}):
+                missing_emotions.append(eid)
+                
+        for iid in used_intensities:
+            if iid not in manager.catalog.get("intensifiers", {}):
+                missing_intensities.append(iid)
+                
+        if missing_voices or missing_emotions or missing_intensities:
+            return {
+                "is_valid": False,
+                "message": "Template is structurally valid, but missing required resources.",
+                "missing_resources": {
+                    "voices": missing_voices,
+                    "emotions": missing_emotions,
+                    "intensities": missing_intensities
+                }
+            }
+            
+        return {
+            "is_valid": True,
+            "message": "The template is structurally valid and all resources are available."
+        }
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except ValidationError:
+        raise HTTPException(status_code=422, detail="Schema validation failed.")

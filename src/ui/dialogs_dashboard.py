@@ -105,7 +105,7 @@ def render_dashboard(navigate_to: Callable[[str, Optional[str]], None]) -> None:
                 ProjectStatus.PAUSED: "orange"
             }.get(project.status, "gray")
 
-            h_cols = st.columns([4, 2, 2])
+            h_cols = st.columns([5, 2, 2])
             with h_cols[0]: 
                 st.markdown(f"##### {project.definition.name}")
             with h_cols[1]: 

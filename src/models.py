@@ -253,6 +253,14 @@ class LineStatus(str, Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     
+class MasteringConfig(BaseModel):
+    """
+    Global audio processing parameters for the final mix.
+    """
+    target_lufs: float = -14.0
+    compressor_ratio: float = 3.0
+    compressor_threshold: float = -20.0
+    
 class ProjectSource(str, Enum):
     """
     Identifies the origin of the project to isolate UI workspaces from ephemeral API requests.
@@ -278,6 +286,10 @@ class DialogLine(BaseModel):
     scene: Optional[str] = None
     scene_location: Optional[str] = None
     
+    pan: float = 0.0
+    gain_db: float = 0.0
+    depth: float = 0.0
+    
     post_delay_ms: int = 400
     fade_in_ms: int = 50
     fade_out_ms: int = 50
@@ -293,6 +305,7 @@ class DialogScript(BaseModel):
     tags: List[str] = Field(default_factory=list)
     default_language: str = "es"
     created_at: float = Field(default_factory=time.time)
+    mastering: MasteringConfig = Field(default_factory=MasteringConfig)
     script: List[DialogLine]
     
     def export_as_template(self) -> str:

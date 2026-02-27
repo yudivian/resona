@@ -11,20 +11,25 @@ from beaver import BeaverDB
 
 from src.config import settings
 from src.models import DialogProject, ProjectStatus, LineStatus, ProjectSource
-from src.backend.audio_engine import AudioEngine, AudioSegmentConfig
+from src.backend.audio_engine import (
+    AudioEngine,
+    AudioSegmentConfig,
+    MasteringAudioConfig,
+)
 
 
 logger = logging.getLogger("Orchestrator")
 logger.setLevel(logging.DEBUG)
 
+
 class DialogOrchestrator:
     """
-    Service responsible for the lifecycle management and supervision of detached 
+    Service responsible for the lifecycle management and supervision of detached
     background synthesis processes.
 
-    The orchestrator functions entirely through transient queries and implements 
-    absolute process detachment. It severs all OS-level file descriptors, streams, 
-    and session groups between the parent web framework and the child AI worker, 
+    The orchestrator functions entirely through transient queries and implements
+    absolute process detachment. It severs all OS-level file descriptors, streams,
+    and session groups between the parent web framework and the child AI worker,
     routing standard output to physical files to ensure zero cross-process contention.
     """
 
@@ -34,9 +39,11 @@ class DialogOrchestrator:
         """
         pass
 
-    def get_project_data_safe(self, project_id: str, retries: int = 10) -> Optional[Dict[str, Any]]:
+    def get_project_data_safe(
+        self, project_id: str, retries: int = 10
+    ) -> Optional[Dict[str, Any]]:
         """
-        Query implementation designed to extract project payloads utilizing transient 
+        Query implementation designed to extract project payloads utilizing transient
         SQLite bindings protected by iteration fallbacks.
 
         Args:
@@ -57,7 +64,9 @@ class DialogOrchestrator:
                     continue
         return None
 
-    def _write_project_data_safe(self, project_id: str, data: Dict[str, Any], retries: int = 10) -> bool:
+    def _write_project_data_safe(
+        self, project_id: str, data: Dict[str, Any], retries: int = 10
+    ) -> bool:
         """
         Commits structural mutations to the database without retaining file hooks.
 
@@ -106,11 +115,11 @@ class DialogOrchestrator:
 
     def start_generation(self, project_id: str) -> bool:
         """
-        Orchestrates the deployment of the background worker module utilizing absolute 
+        Orchestrates the deployment of the background worker module utilizing absolute
         process detachment.
 
-        Forces complete closure of inherited file descriptors and establishes a new 
-        OS session group. I/O streams are strictly routed to physical disk allocations 
+        Forces complete closure of inherited file descriptors and establishes a new
+        OS session group. I/O streams are strictly routed to physical disk allocations
         to guarantee the web framework cannot throttle the inference engine logs.
 
         Args:
@@ -122,25 +131,32 @@ class DialogOrchestrator:
         data = self.get_project_data_safe(project_id)
         if not data:
             return False
-            
+
         project = DialogProject(**data)
         current_status = str(project.status).lower()
 
-        if current_status in [ProjectStatus.STARTING.value, ProjectStatus.GENERATING.value, "starting", "generating"]:
+        if current_status in [
+            ProjectStatus.STARTING.value,
+            ProjectStatus.GENERATING.value,
+            "starting",
+            "generating",
+        ]:
             if project.pid and self._is_pid_alive(project.pid):
                 return True
 
         worker_script = os.path.abspath(os.path.join("src", "dialogs", "worker.py"))
         python_exe = sys.executable
-        
+
         env = os.environ.copy()
         env["PYTHONPATH"] = os.getcwd()
 
         kwargs: Dict[str, Any] = {"env": env}
-        if os.name == 'nt':
-            kwargs['creationflags'] = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+        if os.name == "nt":
+            kwargs["creationflags"] = (
+                subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+            )
         else:
-            kwargs['start_new_session'] = True
+            kwargs["start_new_session"] = True
 
         log_path = os.path.abspath("worker_sys.log")
         log_file = open(log_path, "a")
@@ -151,36 +167,47 @@ class DialogOrchestrator:
             stdout=log_file,
             stderr=subprocess.STDOUT,
             close_fds=True,
-            **kwargs
+            **kwargs,
         )
 
         project.pid = process.pid
         project.status = ProjectStatus.STARTING
         self._write_project_data_safe(project_id, project.model_dump())
-        
+
         return True
-    
+
     def sync_status(self, project_id: str) -> Optional[DialogProject]:
         logger.debug(f"[ORCHESTRATOR] Syncing status for project: {project_id}")
         data = self.get_project_data_safe(project_id)
         if not data:
             logger.warning(f"[ORCHESTRATOR] Project data not found for {project_id}")
             return None
-        
+
         project = DialogProject(**data)
         current_status = str(project.status).lower()
-        
-        if current_status in [ProjectStatus.STARTING.value, ProjectStatus.GENERATING.value, "starting", "generating"]:
+
+        if current_status in [
+            ProjectStatus.STARTING.value,
+            ProjectStatus.GENERATING.value,
+            "starting",
+            "generating",
+        ]:
             is_alive = self._is_pid_alive(project.pid)
-            logger.debug(f"[ORCHESTRATOR] Worker PID {project.pid} is alive: {is_alive}")
-            
+            logger.debug(
+                f"[ORCHESTRATOR] Worker PID {project.pid} is alive: {is_alive}"
+            )
+
             if not is_alive:
-                logger.error(f"[ORCHESTRATOR] 🚨 FATAL: PID {project.pid} died unexpectedly while {current_status.upper()}!")
+                logger.error(
+                    f"[ORCHESTRATOR] 🚨 FATAL: PID {project.pid} died unexpectedly while {current_status.upper()}!"
+                )
                 project.status = ProjectStatus.FAILED
-                data['status'] = ProjectStatus.FAILED.value
-                data['error'] = "Worker process died unexpectedly without saving state (Possible GPU OOM)."
+                data["status"] = ProjectStatus.FAILED.value
+                data["error"] = (
+                    "Worker process died unexpectedly without saving state (Possible GPU OOM)."
+                )
                 self._write_project_data_safe(project_id, data)
-        
+
         return project
 
     def _is_pid_alive(self, pid: Optional[int]) -> bool:
@@ -195,13 +222,13 @@ class DialogOrchestrator:
         """
         if pid is None:
             return False
-            
+
         try:
             process = psutil.Process(pid)
             return process.is_running() and process.status() != psutil.STATUS_ZOMBIE
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
             return False
-        
+
     def pause_generation(self, project_id: str) -> bool:
         """
         Enacts graceful execution cessation by modifying persistent pipeline directives.
@@ -216,16 +243,21 @@ class DialogOrchestrator:
         if not data:
             return False
 
-        current_status = str(data.get('status', '')).lower()
-        if current_status in [ProjectStatus.STARTING.value, ProjectStatus.GENERATING.value, "starting", "generating"]:
-            data['status'] = ProjectStatus.PAUSED.value
+        current_status = str(data.get("status", "")).lower()
+        if current_status in [
+            ProjectStatus.STARTING.value,
+            ProjectStatus.GENERATING.value,
+            "starting",
+            "generating",
+        ]:
+            data["status"] = ProjectStatus.PAUSED.value
             return self._write_project_data_safe(project_id, data)
-            
+
         return False
 
     def cancel_generation(self, project_id: str) -> bool:
         """
-        Forces ungraceful termination upon active process threads mapping designated project limits, 
+        Forces ungraceful termination upon active process threads mapping designated project limits,
         additionally forcing filesystem deletions for derived asset arrays.
 
         Args:
@@ -238,17 +270,17 @@ class DialogOrchestrator:
         if not data:
             return False
 
-        data['status'] = ProjectStatus.CANCELLED.value
+        data["status"] = ProjectStatus.CANCELLED.value
         self._write_project_data_safe(project_id, data)
 
-        pid = data.get('pid')
+        pid = data.get("pid")
         if pid and self._is_pid_alive(pid):
             timeout = 10
             start_wait = time.time()
-            
+
             while self._is_pid_alive(pid) and (time.time() - start_wait < timeout):
                 time.sleep(0.5)
-            
+
             if self._is_pid_alive(pid):
                 try:
                     process = psutil.Process(pid)
@@ -261,16 +293,16 @@ class DialogOrchestrator:
         if not data:
             return False
 
-        for state in data.get('states', []):
-            state['status'] = LineStatus.PENDING.value
-            state['audio_path'] = None
-            state['error'] = None
-        
-        data['pid'] = None
-        data['status'] = ProjectStatus.IDLE.value 
+        for state in data.get("states", []):
+            state["status"] = LineStatus.PENDING.value
+            state["audio_path"] = None
+            state["error"] = None
+
+        data["pid"] = None
+        data["status"] = ProjectStatus.IDLE.value
         self._write_project_data_safe(project_id, data)
 
-        audio_dir = Path(data.get('project_path', '')) / "audio"
+        audio_dir = Path(data.get("project_path", "")) / "audio"
         if audio_dir.exists():
             shutil.rmtree(audio_dir, ignore_errors=True)
             audio_dir.mkdir(parents=True, exist_ok=True)
@@ -279,7 +311,7 @@ class DialogOrchestrator:
 
     def restart_generation(self, project_id: str) -> bool:
         """
-        Triggers aggregate cleanup pipelines mapping cancel parameters prior to enacting 
+        Triggers aggregate cleanup pipelines mapping cancel parameters prior to enacting
         native launch procedures.
 
         Args:
@@ -294,7 +326,7 @@ class DialogOrchestrator:
 
     def delete_project(self, project_id: str) -> bool:
         """
-        Initiates final destruction algorithms terminating relevant subprocesses before 
+        Initiates final destruction algorithms terminating relevant subprocesses before
         annihilating both directory bindings and database logical maps.
 
         Args:
@@ -306,24 +338,23 @@ class DialogOrchestrator:
         data = self.get_project_data_safe(project_id)
         if not data:
             return False
-            
+
         pid = data.get("pid")
         if pid and self._is_pid_alive(pid):
             try:
                 psutil.Process(pid).terminate()
             except Exception:
                 pass
-                
+
         project_path = Path(data.get("project_path", ""))
         if project_path.exists():
             shutil.rmtree(project_path, ignore_errors=True)
-            
+
         return self._delete_project_data_safe(project_id)
-    
-    
+
     def purge_project_assets(self, project_id: str) -> bool:
         """
-        Annuls designated operational processes and clears filesystem derivations without 
+        Annuls designated operational processes and clears filesystem derivations without
         altering persistent schema attributes related to the root project map.
 
         Args:
@@ -335,35 +366,34 @@ class DialogOrchestrator:
         data = self.get_project_data_safe(project_id)
         if not data:
             return False
-            
+
         pid = data.get("pid")
         if pid and self._is_pid_alive(pid):
             try:
                 psutil.Process(pid).terminate()
             except Exception:
                 pass
-                
+
         project_path = Path(data.get("project_path", ""))
         audio_dir = project_path / "audio"
-        
+
         if audio_dir.exists():
             shutil.rmtree(audio_dir, ignore_errors=True)
-        
+
         db = BeaverDB(settings.paths.db_file)
         projects_dict = db.dict("dialog_projects")
         data["merged_audio_path"] = None
         projects_dict[project_id] = data
-            
+
         return True
-    
-    
+
     def merge_project_audio(self, project_id: str) -> Optional[str]:
         """
-        Orchestrates the transition from high-level project metadata to a 
-        low-level audio timeline. 
+        Orchestrates the transition from high-level project metadata to a
+        low-level audio timeline.
 
-        It maps DialogLine definitions into AudioSegmentConfig instances, 
-        invokes the generic AudioEngine for tensor-based merging, and 
+        It maps DialogLine definitions into AudioSegmentConfig instances,
+        invokes the generic AudioEngine for tensor-based merging, and
         persists the resulting master file path to the database.
 
         Args:
@@ -375,25 +405,30 @@ class DialogOrchestrator:
         data = self.get_project_data_safe(project_id)
         if not data:
             return None
-            
+
         project = DialogProject(**data)
         project_root = Path(project.project_path)
-        
+
         segments = []
         state_map = {s.line_id: s for s in project.states}
-        
+
         for line in project.definition.script:
             state = state_map.get(line.id)
             if state and state.status == LineStatus.COMPLETED and state.audio_path:
                 audio_full_path = project_root / state.audio_path
                 if audio_full_path.exists():
-                    segments.append(AudioSegmentConfig(
-                        path=audio_full_path,
-                        fade_in_ms=line.fade_in_ms,
-                        fade_out_ms=line.fade_out_ms,
-                        post_delay_ms=line.post_delay_ms,
-                        room_tone_level=line.room_tone_level
-                    ))
+                    segments.append(
+                        AudioSegmentConfig(
+                            path=audio_full_path,
+                            fade_in_ms=line.fade_in_ms,
+                            fade_out_ms=line.fade_out_ms,
+                            post_delay_ms=line.post_delay_ms,
+                            room_tone_level=line.room_tone_level,
+                            pan=line.pan,
+                            gain_db=line.gain_db,
+                            depth=line.depth
+                        )
+                    )
 
         if not segments:
             return None
@@ -402,28 +437,37 @@ class DialogOrchestrator:
         output_dir = project_root / "audio"
         output_path = output_dir / "master_dialog.wav"
         
-        success = engine.merge_segments(segments, output_path)
-        
+        m_cfg = project.definition.mastering
+        mastering_audio_config = MasteringAudioConfig(
+            target_lufs=m_cfg.target_lufs,
+            compressor_ratio=m_cfg.compressor_ratio,
+            compressor_threshold=m_cfg.compressor_threshold
+        )
+
+        success = engine.merge_segments(segments, output_path, mastering=mastering_audio_config)
+
         if success:
             relative_master_path = str(output_path.relative_to(project_root))
-            relative_mp3_path = str(output_path.with_suffix('.mp3').relative_to(project_root))
-            
+            relative_mp3_path = str(
+                output_path.with_suffix(".mp3").relative_to(project_root)
+            )
+
             db = BeaverDB(settings.paths.db_file)
             projects_dict = db.dict("dialog_projects")
-            
+
             data["merged_audio_path"] = relative_master_path
             data["merged_mp3_path"] = relative_mp3_path
             projects_dict[project_id] = data
-            
+
             return relative_master_path
-            
+
         return None
-    
+
     def add_project(self, project: DialogProject) -> str:
         """
         Registers a newly instantiated dialog project into the persistence layer.
 
-        Delegates the physical database transaction to the internal safe-write 
+        Delegates the physical database transaction to the internal safe-write
         mechanism, ensuring atomic operations and transient failure recoveries.
 
         Args:
@@ -439,9 +483,9 @@ class DialogOrchestrator:
         """
         Executes a destructive upsert operation on an existing dialog project.
 
-        Leverages the internal asset purging mechanisms to strictly guarantee 
-        the termination of any active OS-level processes and the complete 
-        annihilation of legacy audio directories before committing the modified 
+        Leverages the internal asset purging mechanisms to strictly guarantee
+        the termination of any active OS-level processes and the complete
+        annihilation of legacy audio directories before committing the modified
         script state to the database.
 
         Args:
@@ -452,14 +496,16 @@ class DialogOrchestrator:
         """
         self.purge_project_assets(project.id)
         return self._write_project_data_safe(project.id, project.model_dump())
-    
-    def get_all_projects(self, source: Optional[ProjectSource] = None, retries: int = 10) -> List[Dict[str, Any]]:
+
+    def get_all_projects(
+        self, source: Optional[ProjectSource] = None, retries: int = 10
+    ) -> List[Dict[str, Any]]:
         """
         Retrieves the complete project registry from the persistence layer with optional filtering.
 
-        This method performs a thread-safe read of the global projects dictionary. 
-        If a source discriminator is provided, it filters the result set to return 
-        only projects matching the specified origin (UI or API), ensuring 
+        This method performs a thread-safe read of the global projects dictionary.
+        If a source discriminator is provided, it filters the result set to return
+        only projects matching the specified origin (UI or API), ensuring
         consistency through transient retry logic.
 
         Args:
@@ -473,28 +519,28 @@ class DialogOrchestrator:
             try:
                 db = BeaverDB(settings.paths.db_file)
                 projects_dict = db.dict("dialog_projects")
-                
+
                 all_data = [p_data for p_data in projects_dict.values() if p_data]
-                
+
                 if source:
                     return [p for p in all_data if p.get("source") == source.value]
-                
+
                 return all_data
             except Exception:
                 if i < retries - 1:
                     time.sleep(0.25)
                     continue
         return []
-    
+
     def cleanup_expired_api_projects(self) -> List[str]:
         """
         Identifies and terminates expired transient projects initiated via the API.
 
-        This maintenance routine enforces temporal constraints by comparing the 
-        current epoch against the 'expires_at' metadata. To ensure system stability, 
-        it executes a preemptive process interruption for any project still 
-        running beyond its allocated window. This prevents file descriptor 
-        collisions and resource leaks during the subsequent physical directory 
+        This maintenance routine enforces temporal constraints by comparing the
+        current epoch against the 'expires_at' metadata. To ensure system stability,
+        it executes a preemptive process interruption for any project still
+        running beyond its allocated window. This prevents file descriptor
+        collisions and resource leaks during the subsequent physical directory
         annihilation and database record removal.
 
         Returns:
@@ -511,12 +557,14 @@ class DialogOrchestrator:
             if expiration_timestamp and now > expiration_timestamp:
                 try:
                     self.purge_project_assets(project_id)
-                    
+
                     self.delete_project(project_id)
-                    
+
                     purged_ids.append(project_id)
-                    logger.info(f"Cleanup: Enforced expiration for API project {project_id}")
-                    
+                    logger.info(
+                        f"Cleanup: Enforced expiration for API project {project_id}"
+                    )
+
                 except Exception as e:
                     logger.error(f"Cleanup failed for project {project_id}: {e}")
 

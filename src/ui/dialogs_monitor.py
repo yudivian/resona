@@ -133,6 +133,14 @@ def render_monitor(navigate_to: Callable[[str, Optional[str]], None]) -> None:
             st.write(f"**Locations:** {unique_locations}")
             
         st.markdown(f"> **Description:** {project.definition.description if project.definition.description else 'No description provided.'}")
+        
+    with st.container(border=True):
+        st.markdown("**Global Mastering Settings**")
+        with st.expander("Mix dynamics (LUFS & Compression)", expanded=False):
+            m_cols = st.columns(3)
+            m_cols[0].markdown(f"**Target LUFS:**\n{project.definition.mastering.target_lufs}")
+            m_cols[1].markdown(f"**Comp. Ratio:**\n{project.definition.mastering.compressor_ratio}:1")
+            m_cols[2].markdown(f"**Comp. Threshold:**\n{project.definition.mastering.compressor_threshold} dB")
 
     st.markdown("**Global Controls & Export**")
     ctrl_1, ctrl_2, ctrl_3, ctrl_4, ctrl_5, ctrl_6, ctrl_7, ctrl_8 = st.columns(8)
@@ -284,6 +292,11 @@ def render_monitor(navigate_to: Callable[[str, Optional[str]], None]) -> None:
                 aco_cols[1].markdown(f"**Fade In:**\n{line.fade_in_ms} ms")
                 aco_cols[2].markdown(f"**Fade Out:**\n{line.fade_out_ms} ms")
                 aco_cols[3].markdown(f"**Room Tone:**\n{line.room_tone_level:.5f}")
+                
+                mix_cols = st.columns(3)
+                mix_cols[0].markdown(f"**Gain (dB):**\n{line.gain_db}")
+                mix_cols[1].markdown(f"**Pan (L/R):**\n{line.pan}")
+                mix_cols[2].markdown(f"**Depth:**\n{line.depth}")
                     
             if l_state.status == LineStatus.COMPLETED and l_state.audio_path:
                 audio_file_path = Path(project.project_path) / l_state.audio_path

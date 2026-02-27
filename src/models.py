@@ -476,4 +476,24 @@ class DialogStatusResponse(BaseModel):
     outputs: DialogOutputs
     line_states: List[LineStatusTracker]
     
+class DialogMergeResponse(BaseModel):
+    """Response envelope for a successful timeline merge operation."""
+    project_id: str
+    message: str
+    merged_audio_path: Optional[str] = None
+    merged_mp3_path: Optional[str] = None
+    
+class ProjectListItem(BaseModel):
+    """Minimal project metadata for list views."""
+    project_id: str
+    name: str
+    status: ProjectStatus
+    source: str
+    created_at: Optional[float] = None
+
+class ProjectListResponse(BaseModel):
+    """Response envelope for project discovery."""
+    total: int
+    projects: List[ProjectListItem]
+    
 

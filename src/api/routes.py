@@ -4,8 +4,11 @@ import logging
 import uuid
 import json
 import time
+import shutil
+import tempfile
+from pathlib import Path
 from typing import List, Optional, Any, Dict
-from fastapi import APIRouter, HTTPException, Query, Depends
+from fastapi import APIRouter, HTTPException, Query, Depends, Response
 from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
 from fastapi import BackgroundTasks 
 from pydantic import ValidationError
@@ -30,7 +33,10 @@ from src.models import (
     DialogOutputs,
     DialogProgress,
     LineStatusTracker,
-    LineIdentifier
+    LineIdentifier,
+    DialogMergeResponse,
+    ProjectListItem,
+    ProjectListResponse,
 )
 
 from src.backend.store import VoiceStore
@@ -859,4 +865,365 @@ def get_dialog_project_status(
             )
             for state in states
         ]
+    )
+    
+@router.post("/dialogs/{project_id}/merge", response_model=DialogMergeResponse)
+def merge_dialog_project(
+    project_id: str,
+    orchestrator: Any = Depends(get_orchestrator)
+):
+    """
+    Assembles the completed individual dialogue lines into a master audio file.
+
+    This endpoint triggers the AudioEngine via the orchestrator to process all 
+    individual audio segments associated with the project. It strictly enforces 
+    a state validation, ensuring that timeline generation has successfully concluded 
+    before attempting to compute the mix.
+
+    Args:
+        project_id (str): The canonical identifier of the target dialog project.
+        orchestrator (Any): Injected service delegating the heavy audio mixing.
+
+    Returns:
+        DialogMergeResponse: An envelope containing the paths to the finalized assets.
+
+    Raises:
+        HTTPException (400): If the project timeline is not in a COMPLETED state.
+        HTTPException (404): If the provided project_id does not exist.
+        HTTPException (500): If the physical audio mix or database update fails.
+    """
+    project_data = orchestrator.get_project_data_safe(project_id)
+    
+    if not project_data:
+        raise HTTPException(
+            status_code=404, 
+            detail=f"Dialog project with ID {project_id} not found."
+        )
+        
+    current_status = project_data.get("status")
+    if current_status not in (ProjectStatus.COMPLETED.value, "COMPLETED"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot merge project. Current status is '{current_status}'. All lines must be COMPLETED before assembly."
+        )
+
+    try:
+        updated_path = orchestrator.merge_project_audio(project_id)
+        
+        if not updated_path:
+            raise HTTPException(
+                status_code=500, 
+                detail="Merge operation failed to return updated persistence data."
+            )
+            
+        updated_data = orchestrator.get_project_data_safe(project_id)
+            
+        return DialogMergeResponse(
+            project_id=updated_data.get("id"),
+            message="Master audio timeline successfully assembled.",
+            merged_audio_path=updated_data.get("merged_audio_path"),
+            merged_mp3_path=updated_data.get("merged_mp3_path")
+        )
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Audio merge failed for project {project_id}: {e}")
+        raise HTTPException(
+            status_code=500, 
+            detail="Internal server error during audio assembly."
+        )
+
+@router.get("/dialogs/{project_id}/download", response_class=FileResponse)
+def download_dialog_assets(
+    project_id: str,
+    format: str = Query("wav", pattern="^(wav|mp3|bundle)$", description="Asset format."),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
+    orchestrator: Any = Depends(get_orchestrator)
+):
+    """
+    Dispatches generated dialogue assets utilizing absolute filesystem resolution.
+
+    This implementation provides dynamic distribution of project artifacts. For master 
+    files, it resolves paths by joining the project's workspace root with the relative 
+    paths stored in the database. For bundles, it generates a ZIP archive on-the-fly 
+    within the system's temporary directory, ensuring the project workspace remains 
+    unpolluted, while scheduling an atomic cleanup of the transient ZIP post-transfer.
+
+    Args:
+        project_id (str): The unique identifier for the dialog project.
+        format (str): Requested asset format (wav, mp3, or bundle).
+        background_tasks (BackgroundTasks): Utility for post-response cleanup.
+        orchestrator (Any): Service providing safe access to project metadata.
+
+    Returns:
+        FileResponse: High-performance binary stream of the requested asset.
+
+    Raises:
+        HTTPException (404): If the project metadata or physical files are missing.
+        HTTPException (500): If the archival process encounters a system-level error.
+    """
+    project_data = orchestrator.get_project_data_safe(project_id)
+    if not project_data:
+        raise HTTPException(status_code=404, detail="Project not found.")
+
+    workspace_path = project_data.get("project_path")
+    if not workspace_path or not os.path.exists(workspace_path):
+        raise HTTPException(status_code=404, detail="Project workspace directory missing on disk.")
+
+    if format == "bundle":
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as tmp:
+            temp_zip_path = tmp.name
+        
+        try:
+            shutil.make_archive(temp_zip_path.replace(".zip", ""), 'zip', root_dir=workspace_path)
+            background_tasks.add_task(os.remove, temp_zip_path)
+            
+            return FileResponse(
+                path=temp_zip_path,
+                media_type="application/zip",
+                filename=f"bundle_{project_id}.zip"
+            )
+        except Exception as e:
+            if os.path.exists(temp_zip_path):
+                os.remove(temp_zip_path)
+            logger.error(f"On-the-fly bundle assembly failed for {project_id}: {e}")
+            raise HTTPException(status_code=500, detail="Failed to assemble the project bundle.")
+
+    target_field = "merged_mp3_path" if format == "mp3" else "merged_audio_path"
+    relative_file_path = project_data.get(target_field)
+
+    if not relative_file_path:
+        raise HTTPException(status_code=404, detail=f"The {format.upper()} asset has not been generated.")
+
+    full_path = os.path.join(workspace_path, relative_file_path)
+
+    if not os.path.exists(full_path):
+        logger.error(f"Integrity error: Expected file at {full_path} is missing.")
+        raise HTTPException(status_code=404, detail="Physical asset missing on server.")
+
+    return FileResponse(
+        path=full_path,
+        media_type="audio/mpeg" if format == "mp3" else "audio/wav",
+        filename=os.path.basename(full_path)
+    )
+    
+@router.get("/dialogs/{project_id}/lines/{line_id}/audio", response_class=FileResponse)
+def download_line_audio(
+    project_id: str,
+    line_id: str,
+    orchestrator: Any = Depends(get_orchestrator)
+):
+    """
+    Retrieves the synthesized audio segment for a specific dialogue line.
+
+    This endpoint facilitates incremental asset consumption by allowing clients 
+    to retrieve individual WAV segments as soon as their synthesis status 
+    reaches the COMPLETED state. It performs a dual-layer validation, verifying 
+    both the logical metadata in the persistence layer and the physical 
+    integrity of the asset on the filesystem.
+
+    Args:
+        project_id (str): The canonical identifier of the dialog project.
+        line_id (str): The specific identifier of the dialogue line within the script.
+        orchestrator (Any): Injected service for safe metadata and state retrieval.
+
+    Returns:
+        FileResponse: The binary stream of the individual audio segment.
+
+    Raises:
+        HTTPException (400): If the requested line has not reached the COMPLETED status.
+        HTTPException (404): If the project, the line identifier, or the physical file is missing.
+    """
+    project_data = orchestrator.get_project_data_safe(project_id)
+    if not project_data:
+        raise HTTPException(status_code=404, detail="Project not found.")
+
+    states = project_data.get("states", [])
+    line_state = next((s for s in states if s.get("line_id") == line_id), None)
+
+    if not line_state:
+        raise HTTPException(
+            status_code=404, 
+            detail=f"Line '{line_id}' does not belong to project '{project_id}'."
+        )
+
+    if line_state.get("status") != LineStatus.COMPLETED.value:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Line audio is unavailable. Current status: '{line_state.get('status')}'."
+        )
+
+    relative_audio_path = line_state.get("audio_path")
+    workspace_path = project_data.get("project_path")
+
+    if not relative_audio_path or not workspace_path:
+        raise HTTPException(
+            status_code=404, 
+            detail="Audio path metadata is missing for this completed line."
+        )
+
+    full_path = os.path.normpath(os.path.join(workspace_path, relative_audio_path))
+
+    if not os.path.exists(full_path):
+        logger.error(f"Asset integrity failure: Line audio missing at {full_path}")
+        raise HTTPException(
+            status_code=404, 
+            detail="The physical audio file for this line is missing from the server."
+        )
+
+    return FileResponse(
+        path=full_path,
+        media_type="audio/wav",
+        filename=f"line_{line_id}.wav"
+    )
+    
+@router.delete("/dialogs/{project_id}", status_code=204)
+def delete_dialog_project(
+    project_id: str,
+    orchestrator: Any = Depends(get_orchestrator)
+):
+    """
+    Executes a complete and destructive purge of a dialog project and its resources.
+
+    This operation implements a multi-tier cleanup strategy to ensure system 
+    integrity. It first triggers an OS-level process interruption to terminate 
+    any active background synthesis workers associated with the project identifier, 
+    preventing file descriptor leaks. Subsequently, it performs a recursive 
+    annihilation of the physical workspace directory. Finally, it purges the 
+    project metadata from the persistence layer to ensure absolute removal 
+    from the database records.
+
+    Args:
+        project_id (str): The canonical identifier of the project to be annihilated.
+        orchestrator (Any): Injected service providing lifecycle and process management.
+
+    Raises:
+        HTTPException (404): If the project identifier does not exist in the database.
+        HTTPException (500): If the system fails to kill active processes or clear disk assets.
+    """
+    project_data = orchestrator.get_project_data_safe(project_id)
+    
+    if not project_data:
+        raise HTTPException(
+            status_code=404, 
+            detail=f"Project with ID {project_id} not found."
+        )
+
+    try:
+        orchestrator.purge_project_assets(project_id)
+        
+        orchestrator.delete_project(project_id)
+        
+        return
+        
+    except Exception as e:
+        logger.error(f"Critical failure during destructive cleanup for project {project_id}: {e}")
+        raise HTTPException(
+            status_code=500, 
+            detail="Internal server error during the project purging sequence."
+        )
+        
+@router.get("/dialogs", response_model=ProjectListResponse)
+def list_dialog_projects(
+    source: str = Query(
+        "all", 
+        pattern="^(ui|api|all)$", 
+        description="Filters project discovery by creation source ('ui', 'api', or 'all')."
+    ),
+    orchestrator: Any = Depends(get_orchestrator)
+):
+    """
+    Retrieves an inventory of dialog projects with source-based discrimination.
+
+    This discovery endpoint interfaces with the orchestration layer to extract the 
+    global project registry. It supports dynamic segmentation, allowing consumers 
+    to isolate projects initiated via the administrative dashboard, the REST API, 
+    or retrieve the entire collection. The response is structured for lightweight 
+    consumption in list-view components.
+
+    Args:
+        source (str): Source filter discriminator ('ui', 'api', or 'all').
+        orchestrator (Any): Injected service for registry and metadata access.
+
+    Returns:
+        ProjectListResponse: An envelope containing project count and metadata list.
+
+    Raises:
+        HTTPException (500): If the persistence layer fails to resolve the registry.
+    """
+    try:
+        query_source = None
+        if source != "all":
+            query_source = ProjectSource(source)
+            
+        raw_projects = orchestrator.get_all_projects(source=query_source)
+        
+        project_list = [
+            ProjectListItem(
+                project_id=data.get("id"),
+                name=data.get("definition", {}).get("name", "Unnamed Project"),
+                status=data.get("status"),
+                source=data.get("source", ProjectSource.API.value),
+                created_at=data.get("definition", {}).get("created_at")
+            )
+            for data in raw_projects
+        ]
+        
+        return ProjectListResponse(
+            total=len(project_list),
+            projects=project_list
+        )
+        
+    except Exception as e:
+        logger.error(f"Failed to resolve project inventory for source '{source}': {e}")
+        raise HTTPException(
+            status_code=500, 
+            detail="Internal server error while resolving project inventory."
+        )
+
+@router.get("/dialogs/{project_id}/export")
+def export_dialog_script(
+    project_id: str,
+    orchestrator: Any = Depends(get_orchestrator)
+):
+    """
+    Exports a project script as a portable JSON template.
+
+    This endpoint retrieves the raw project data from the persistence layer and 
+    instantiates the DialogProject model to leverage its internal template 
+    export logic. The resulting JSON is stripped of instance-specific 
+    identifiers and execution states, then delivered as a downloadable 
+    file attachment.
+
+    Args:
+        project_id (str): The unique identifier of the project to export.
+        orchestrator (Any): Injected service for safe data retrieval.
+
+    Returns:
+        Response: A JSON payload configured as a file download.
+
+    Raises:
+        HTTPException (404): If the project data cannot be found.
+    """
+    data = orchestrator.get_project_data_safe(project_id)
+    
+    if not data:
+        raise HTTPException(
+            status_code=404, 
+            detail=f"Project with ID {project_id} not found."
+        )
+    
+    project = DialogProject(**data)
+    
+    json_template = project.definition.export_as_template()
+    
+    safe_filename = project.definition.name.replace(" ", "_").lower()
+    
+    return Response(
+        content=json_template,
+        media_type="application/json",
+        headers={
+            "Content-Disposition": f"attachment; filename={safe_filename}_template.json"
+        }
     )

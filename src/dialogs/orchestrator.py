@@ -6,11 +6,11 @@ import shutil
 import time
 import logging
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from beaver import BeaverDB
 
 from src.config import settings
-from src.models import DialogProject, ProjectStatus, LineStatus
+from src.models import DialogProject, ProjectStatus, LineStatus, ProjectSource
 from src.backend.audio_engine import AudioEngine, AudioSegmentConfig
 
 
@@ -452,3 +452,36 @@ class DialogOrchestrator:
         """
         self.purge_project_assets(project.id)
         return self._write_project_data_safe(project.id, project.model_dump())
+    
+    def get_all_projects(self, source: Optional[ProjectSource] = None, retries: int = 10) -> List[Dict[str, Any]]:
+        """
+        Retrieves the complete project registry from the persistence layer with optional filtering.
+
+        This method performs a thread-safe read of the global projects dictionary. 
+        If a source discriminator is provided, it filters the result set to return 
+        only projects matching the specified origin (UI or API), ensuring 
+        consistency through transient retry logic.
+
+        Args:
+            source (Optional[ProjectSource]): The origin discriminator or None to retrieve all.
+            retries (int): Evaluation threshold for concurrent access fallbacks.
+
+        Returns:
+            List[Dict[str, Any]]: A collection of raw project metadata payloads.
+        """
+        for i in range(retries):
+            try:
+                db = BeaverDB(settings.paths.db_file)
+                projects_dict = db.dict("dialog_projects")
+                
+                all_data = [p_data for p_data in projects_dict.values() if p_data]
+                
+                if source:
+                    return [p for p in all_data if p.get("source") == source.value]
+                
+                return all_data
+            except Exception:
+                if i < retries - 1:
+                    time.sleep(0.25)
+                    continue
+        return []

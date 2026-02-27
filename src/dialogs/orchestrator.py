@@ -485,3 +485,39 @@ class DialogOrchestrator:
                     time.sleep(0.25)
                     continue
         return []
+    
+    def cleanup_expired_api_projects(self) -> List[str]:
+        """
+        Identifies and terminates expired transient projects initiated via the API.
+
+        This maintenance routine enforces temporal constraints by comparing the 
+        current epoch against the 'expires_at' metadata. To ensure system stability, 
+        it executes a preemptive process interruption for any project still 
+        running beyond its allocated window. This prevents file descriptor 
+        collisions and resource leaks during the subsequent physical directory 
+        annihilation and database record removal.
+
+        Returns:
+            List[str]: A collection of project identifiers that were successfully purged.
+        """
+        now = time.time()
+        api_projects = self.get_all_projects(source=ProjectSource.API)
+        purged_ids = []
+
+        for project_data in api_projects:
+            project_id = project_data.get("id")
+            expiration_timestamp = project_data.get("expires_at")
+
+            if expiration_timestamp and now > expiration_timestamp:
+                try:
+                    self.purge_project_assets(project_id)
+                    
+                    self.delete_project(project_id)
+                    
+                    purged_ids.append(project_id)
+                    logger.info(f"Cleanup: Enforced expiration for API project {project_id}")
+                    
+                except Exception as e:
+                    logger.error(f"Cleanup failed for project {project_id}: {e}")
+
+        return purged_ids

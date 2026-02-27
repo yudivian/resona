@@ -21,6 +21,7 @@ class SystemConfig(BaseModel):
     name: str
     version: str
     compute: ComputeConfig
+    cleanup_interval_minutes: int = Field(default=30, ge=1)
 
 class PathsConfig(BaseModel):
     """

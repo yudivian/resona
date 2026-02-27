@@ -1,6 +1,7 @@
 system:
   name: "Resona MVP"
   version: "0.1.0"
+  cleanup_interval_minutes: 30
   
   compute:
     tts_device: "cuda"

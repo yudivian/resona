@@ -27,6 +27,7 @@ dependencies = [
     "bitsandbytes>=0.43.0",   
     "psutil>=6.0.0",          
     "pandas>=2.0.0",
+    "apscheduler>=3.10.1",
 ]
 
 [tool.setuptools]

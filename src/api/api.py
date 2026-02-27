@@ -4,6 +4,8 @@ from contextlib import asynccontextmanager
 
 from src.config import settings
 from src.api.routes import router
+from apscheduler.schedulers.background import BackgroundScheduler
+from src.dialogs.orchestrator import DialogOrchestrator
 
 logging.basicConfig(
     level=logging.INFO,
@@ -16,17 +18,28 @@ logger = logging.getLogger("resona.api")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
-    Manages the application lifecycle events (Startup and Shutdown).
-    
-    This context manager is the modern FastAPI way to handle initialization logic.
-    It logs the system state before the API starts accepting requests and performs
-    cleanup (if any) after the API stops.
+    Manages the application lifecycle and background maintenance tasks.
     """
     logger.info(f"🚀 Resona API v{settings.system.version} is starting up...")
-    logger.info(f"🔧 Compute Device Configured: {settings.system.compute.tts_device}")
+    
+    scheduler = BackgroundScheduler()
+    orchestrator = DialogOrchestrator()
+    
+    interval = settings.system.cleanup_interval_minutes
+    
+    scheduler.add_job(
+        orchestrator.cleanup_expired_api_projects, 
+        "interval", 
+        minutes=interval,
+        id="api_cleanup_task"
+    )
+    
+    scheduler.start()
+    logger.info("🧹 API Project Cleanup Scheduler initiated (30m interval).")
     
     yield
     
+    scheduler.shutdown()
     logger.info("🛑 Resona API is shutting down.")
 
 app = FastAPI(

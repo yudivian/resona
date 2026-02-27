@@ -1084,23 +1084,21 @@ def delete_dialog_project(
     orchestrator: Any = Depends(get_orchestrator)
 ):
     """
-    Executes a complete and destructive purge of a dialog project and its resources.
+    Executes a destructive purge of a dialog project, strictly restricted to API-sourced entities.
 
-    This operation implements a multi-tier cleanup strategy to ensure system 
-    integrity. It first triggers an OS-level process interruption to terminate 
-    any active background synthesis workers associated with the project identifier, 
-    preventing file descriptor leaks. Subsequently, it performs a recursive 
-    annihilation of the physical workspace directory. Finally, it purges the 
-    project metadata from the persistence layer to ensure absolute removal 
-    from the database records.
+    This endpoint enforces domain isolation by verifying the project's origin before 
+    proceeding with the cleanup. Projects created via the UI are protected from 
+    this interface to prevent accidental data loss. If valid, it triggers the full 
+    purge sequence: process termination, filesystem removal, and database erasure.
 
     Args:
-        project_id (str): The canonical identifier of the project to be annihilated.
-        orchestrator (Any): Injected service providing lifecycle and process management.
+        project_id (str): The identifier of the API-sourced project to be purged.
+        orchestrator (Any): Service providing lifecycle and maintenance management.
 
     Raises:
-        HTTPException (404): If the project identifier does not exist in the database.
-        HTTPException (500): If the system fails to kill active processes or clear disk assets.
+        HTTPException (404): If the project identifier is not found.
+        HTTPException (403): If the project is a UI-sourced entity (Forbidden).
+        HTTPException (500): If the underlying cleanup operations fail.
     """
     project_data = orchestrator.get_project_data_safe(project_id)
     
@@ -1108,6 +1106,13 @@ def delete_dialog_project(
         raise HTTPException(
             status_code=404, 
             detail=f"Project with ID {project_id} not found."
+        )
+
+    if project_data.get("source") != ProjectSource.API.value:
+        logger.warning(f"Unauthorized deletion attempt on UI project {project_id} via API.")
+        raise HTTPException(
+            status_code=403,
+            detail="Restricted operation. Projects created via the UI must be managed through the Dashboard."
         )
 
     try:

@@ -260,6 +260,8 @@ class MasteringConfig(BaseModel):
     target_lufs: float = -14.0
     compressor_ratio: float = 3.0
     compressor_threshold: float = -20.0
+    use_hpf: bool = True
+    use_deesser: bool = True
     
 class ProjectSource(str, Enum):
     """

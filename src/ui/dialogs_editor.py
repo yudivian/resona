@@ -164,7 +164,7 @@ def render_editor(navigate_to: Callable[[str, Optional[str]], None]) -> None:
                     st.error(f"Invalid JSON: {e}")
     else:
         with st.container(border=True):
-            st.subheader("Project Configuration")
+            st.markdown("**Project Configuration**")
             c_meta = st.columns([2, 1, 1.5])
             with c_meta[0]:
                 state["definition"]["name"] = st.text_input(
@@ -198,7 +198,7 @@ def render_editor(navigate_to: Callable[[str, Optional[str]], None]) -> None:
         with st.container(border=True):
             st.markdown("**Global Mastering Settings**")
             with st.expander(
-                "Configure final mix dynamics (LUFS & Compression)", expanded=False
+                "Configure final mix dynamics", expanded=False
             ):
                 if "mastering" not in state["definition"]:
                     state["definition"]["mastering"] = {
@@ -236,8 +236,23 @@ def render_editor(navigate_to: Callable[[str, Optional[str]], None]) -> None:
                         step=1.0,
                         disabled=is_locked,
                     )
+                m_toggles = st.columns(2)
+                with m_toggles[0]:
+                    m_dict["use_hpf"] = st.toggle(
+                        "Apply High-Pass Filter (80Hz)",
+                        value=m_dict.get("use_hpf", True),
+                        help="Cleans up low-frequency rumble and sub-bass from AI voices.",
+                        disabled=is_locked
+                    )
+                with m_toggles[1]:
+                    m_dict["use_deesser"] = st.toggle(
+                        "Apply De-esser",
+                        value=m_dict.get("use_deesser", True),
+                        help="Softens harsh sibilance ('S' and 'Sh' sounds) before compression.",
+                        disabled=is_locked
+                    )
 
-        st.subheader(f"Script Composition ({line_count}/{MAX_DIALOG_LINES})")
+        st.markdown(f"**Script Composition ({line_count}/{MAX_DIALOG_LINES})**")
         for i, line in enumerate(state["definition"].get("script", [])):
             with st.container(border=True):
                 row = st.columns([1.5, 0.7, 1.5, 1.2, 0.4])
@@ -346,9 +361,11 @@ def render_editor(navigate_to: Callable[[str, Optional[str]], None]) -> None:
                         line["post_delay_ms"] = st.number_input(
                             "Post Delay (ms)",
                             value=line.get("post_delay_ms", 400),
+                            min_value=-50000,
                             step=50,
+                            help="Use negative values to overlap this line with the next one (e.g. -500 for a 0.5s overlap).",
                             key=f"pd_{i}",
-                            disabled=is_locked,
+                            disabled=is_locked
                         )
                     with aco_cols[1]:
                         line["fade_in_ms"] = st.number_input(

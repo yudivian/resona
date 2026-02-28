@@ -109,7 +109,7 @@ def render_monitor(navigate_to: Callable[[str, Optional[str]], None]) -> None:
             st.error(f"Execution Error: {error_msg}")
 
     with st.container(border=True):
-        st.markdown("**Project Details & Metadata**")
+        st.markdown("**Project Details**")
         
         unique_scenes = len(set(l.scene for l in project.definition.script))
         unique_locations = len(set(l.scene_location for l in project.definition.script))
@@ -120,27 +120,35 @@ def render_monitor(navigate_to: Callable[[str, Optional[str]], None]) -> None:
             st.write(f"**Name:** {project.definition.name}")
         with m_cc2:
             st.write(f"**ID:** {project.id}")
-        st.divider()    
-        m_c1, m_c2, m_c3 = st.columns(3)
-        with m_c1:
-            st.write(f"**Base Language:** {project.definition.default_language.upper()}")
-            st.write(f"**Voices:** {unique_voices}")
-        with m_c2:
-            st.write(f"**Tags:** {', '.join(project.definition.tags) if project.definition.tags else 'None'}")
-            st.write(f"**Scenes:** {unique_scenes}")
-        with m_c3:
-            st.write(f"**Created At:** {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(project.definition.created_at))}")
-            st.write(f"**Locations:** {unique_locations}")
-            
-        st.markdown(f"> **Description:** {project.definition.description if project.definition.description else 'No description provided.'}")
+        with st.expander("Metadata", expanded=False):    
+            m_c1, m_c2, m_c3 = st.columns(3)
+            with m_c1:
+                st.write(f"**Base Language:** {project.definition.default_language.upper()}")
+                st.write(f"**Voices:** {unique_voices}")
+            with m_c2:
+                st.write(f"**Tags:** {', '.join(project.definition.tags) if project.definition.tags else 'None'}")
+                st.write(f"**Scenes:** {unique_scenes}")
+            with m_c3:
+                st.write(f"**Created At:** {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(project.definition.created_at))}")
+                st.write(f"**Locations:** {unique_locations}")
+                
+            st.markdown(f"> **Description:** {project.definition.description if project.definition.description else 'No description provided.'}")
         
     with st.container(border=True):
         st.markdown("**Global Mastering Settings**")
-        with st.expander("Mix dynamics (LUFS & Compression)", expanded=False):
+        with st.expander("Final mix dynamics", expanded=False):
             m_cols = st.columns(3)
             m_cols[0].markdown(f"**Target LUFS:**\n{project.definition.mastering.target_lufs}")
             m_cols[1].markdown(f"**Comp. Ratio:**\n{project.definition.mastering.compressor_ratio}:1")
             m_cols[2].markdown(f"**Comp. Threshold:**\n{project.definition.mastering.compressor_threshold} dB")
+            
+            pol_cols = st.columns(2)
+            
+            hpf_val = getattr(project.definition.mastering, 'use_hpf', True)
+            deesser_val = getattr(project.definition.mastering, 'use_deesser', True)
+            
+            pol_cols[0].markdown(f"**High-Pass Filter:**\n{'✅ On' if hpf_val else '❌ Off'}")
+            pol_cols[1].markdown(f"**De-esser:**\n{'✅ On' if deesser_val else '❌ Off'}")
 
     st.markdown("**Global Controls & Export**")
     ctrl_1, ctrl_2, ctrl_3, ctrl_4, ctrl_5, ctrl_6, ctrl_7, ctrl_8 = st.columns(8)
@@ -186,7 +194,7 @@ def render_monitor(navigate_to: Callable[[str, Optional[str]], None]) -> None:
         if st.button("🗑️", help="Delete", type="secondary", use_container_width=True, disabled=is_active):
             delete_project_dialog(project.id, navigate_to)
             
-    st.divider()
+    
 
     master_path_str = raw_data.get("merged_audio_path")
     mergedmp3_path_str = raw_data.get("merged_mp3_path")
@@ -196,7 +204,9 @@ def render_monitor(navigate_to: Callable[[str, Optional[str]], None]) -> None:
         if master_full_path.exists():
             with st.container(border=True):
                 st.markdown("**Master Audio Output**")
-                st.audio(str(master_full_path))
+                with open(master_full_path, "rb") as f: 
+                    master_bytes = f.read()
+                st.audio(master_bytes, format="audio/wav")
                 mc1, mc2 = st.columns([1, 1], vertical_alignment="center")
                 with mc1:                    
                     with open(master_full_path, "rb") as f: master_bytes = f.read()
@@ -207,7 +217,8 @@ def render_monitor(navigate_to: Callable[[str, Optional[str]], None]) -> None:
                         if mastermp3_full_path.exists():
                             with open(mastermp3_full_path, "rb") as f: mp3master_bytes = f.read()
                             st.download_button(label="⬇️ MP3", data=mp3master_bytes, file_name=f"master_{project.definition.name.replace(' ', '_')}.mp3", mime="audio/mpeg", key=f"dl_mp3_master_{project.id}", use_container_width=True)
-            st.divider()
+            
+    st.divider()
 
     
 
@@ -279,7 +290,7 @@ def render_monitor(navigate_to: Callable[[str, Optional[str]], None]) -> None:
                 else: 
                     st.markdown(f"<div style='background-color: rgba(13, 202, 240, 0.15); color: #0dcaf0; padding: 4px 8px; border-radius: 4px; text-align: center; font-size: 0.8em; font-weight: 600;'>{l_state.status.value.upper()}</div>", unsafe_allow_html=True)
 
-            with st.expander("📝 Script Text", expanded=False):
+            with st.expander("📝 Script Text", expanded=True):
                 st.write(f"*{line.text}*")
             
             with st.expander("🛠️ Acoustic & Context Settings", expanded=False):
@@ -313,13 +324,13 @@ def render_monitor(navigate_to: Callable[[str, Optional[str]], None]) -> None:
         st.divider()
         p_c1, p_c2, p_c3 = st.columns([1, 2, 1])
         with p_c1:
-            if st.button("Previous", disabled=st.session_state.monitor_page <= 1, use_container_width=True):
+            if st.button("< Previous", disabled=st.session_state.monitor_page <= 1, use_container_width=True):
                 st.session_state.monitor_page -= 1
                 st.rerun()
         with p_c2: 
             st.markdown(f"<div style='text-align: center'>Page {st.session_state.monitor_page} of {pages}</div>", unsafe_allow_html=True)
         with p_c3:
-            if st.button("Next", disabled=st.session_state.monitor_page >= pages, use_container_width=True):
+            if st.button("Next >", disabled=st.session_state.monitor_page >= pages, use_container_width=True):
                 st.session_state.monitor_page += 1
                 st.rerun()
 

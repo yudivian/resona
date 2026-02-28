@@ -127,6 +127,8 @@ def render_create(navigate_to: Callable[[str, Optional[str]], None]) -> None:
             "target_lufs": -14.0,
             "compressor_ratio": 3.0,
             "compressor_threshold": -20.0,
+            "use_hpf": True,
+            "use_deesser": True,
         }
 
     if "temp_lines" not in st.session_state:
@@ -150,7 +152,7 @@ def render_create(navigate_to: Callable[[str, Optional[str]], None]) -> None:
         ]
 
     with st.container(border=True):
-        st.subheader("Project Configuration")
+        st.markdown("**Project Configuration**")
         c_meta = st.columns([2, 1, 1.5])
         with c_meta[0]:
             p_name = st.text_input("Project Name", placeholder="e.g. Documentary V1")
@@ -167,7 +169,7 @@ def render_create(navigate_to: Callable[[str, Optional[str]], None]) -> None:
     with st.container(border=True):
         st.markdown("**Global Mastering Settings**")
         with st.expander(
-            "Configure final mix dynamics (LUFS & Compression)", expanded=False
+            "Configure final mix dynamics", expanded=False
         ):
             m_cols = st.columns(3)
             with m_cols[0]:
@@ -194,11 +196,26 @@ def render_create(navigate_to: Callable[[str, Optional[str]], None]) -> None:
                     max_value=0.0,
                     step=1.0,
                 )
+            m_toggles = st.columns(2)
+            with m_toggles[0]:
+                m_hpf = st.toggle(
+                    "Apply High-Pass Filter (80Hz)",
+                    value=st.session_state.temp_mastering.get("use_hpf", True),
+                    help="Cleans up low-frequency rumble and sub-bass from AI voices."
+                )
+            with m_toggles[1]:
+                m_deesser = st.toggle(
+                    "Apply De-esser",
+                    value=st.session_state.temp_mastering.get("use_deesser", True),
+                    help="Softens harsh sibilance ('S' and 'Sh' sounds) before compression."
+                )
 
         st.session_state.temp_mastering = {
             "target_lufs": m_lufs,
             "compressor_ratio": m_ratio,
             "compressor_threshold": m_thresh,
+            "use_hpf": m_hpf,
+            "use_deesser": m_deesser,
         }
 
     voices = st.session_state.voice_store.get_all()
@@ -206,7 +223,7 @@ def render_create(navigate_to: Callable[[str, Optional[str]], None]) -> None:
     emotions_cat = st.session_state.emotion_manager.catalog.get("emotions", {})
     intensities_cat = st.session_state.emotion_manager.catalog.get("intensifiers", {})
 
-    st.subheader(f"Composition ({len(st.session_state.temp_lines)}/{MAX_DIALOG_LINES})")
+    st.markdown(f"**Composition ({len(st.session_state.temp_lines)}/{MAX_DIALOG_LINES})**")
 
     updated_lines = []
     for i, line in enumerate(st.session_state.temp_lines):
@@ -301,8 +318,10 @@ def render_create(navigate_to: Callable[[str, Optional[str]], None]) -> None:
                     l_delay = st.number_input(
                         "Post Delay (ms)",
                         value=line.get("post_delay_ms", 400),
+                        min_value=-50000,
                         step=50,
-                        key=f"pd_{i}",
+                        help="Use negative values to overlap this line with the next one (e.g. -500 for a 0.5s overlap).",
+                        key=f"pd_{i}"
                     )
                 with aco_cols[1]:
                     l_fin = st.number_input(

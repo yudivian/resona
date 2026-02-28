@@ -37,6 +37,8 @@ class MasteringAudioConfig:
     target_lufs: float = -14.0
     compressor_ratio: float = 3.0
     compressor_threshold: float = -20.0
+    use_hpf: bool = True
+    use_deesser: bool = True
 
 class AudioEngine:
     """
@@ -100,36 +102,20 @@ class AudioEngine:
         noise = torch.randn(1, num_frames) * level
         return noise
     
-    def _build_spatial_mix(self, segments: List['AudioSegmentConfig']) -> Optional[torch.Tensor]:
+    def _build_spatial_mix(self, segments: List['AudioSegmentConfig'], use_hpf: bool = True) -> Optional[torch.Tensor]:
         """
         Orchestrates a multi-stage Digital Signal Processing (DSP) pipeline to assemble 
         multiple audio clips into a unified stereophonic timeline.
 
-        The processing sequence for each segment follows these technical specifications:
-        1. Resampling: Standardizes the input signal to the engine's target sample rate.
-        2. Depth Processing: Simulates air absorption and distance via a low-pass 
-           biquad filter. The cutoff frequency is dynamically calculated using a 
-           linear mapping where increased depth reduces high-frequency content.
-        3. Amplitude Scaling: Applies gain based on decibel input, converted to 
-           linear multipliers to modify the raw tensor values.
-        4. Spatial Imaging: Implements a Constant Power Panning algorithm. This 
-           algorithm uses trigonometric functions (sine and cosine) to distribute 
-           monophonic energy across two channels, ensuring the perceived volume 
-           remains constant as the signal moves across the stereo field.
-        5. Temporal Concatenation: Stacks processed tensors and generated room 
-           tone gaps along the time dimension (dim=1).
-
-        Args:
-            segments (List[AudioSegmentConfig]): A list containing source paths and 
-                                                 individual mixing parameters.
-
-        Returns:
-            Optional[torch.Tensor]: A high-precision stereophonic tensor [2, samples] 
-                                    representing the unmastered mix, or None if the 
-                                    pipeline produces no valid audio data.
+        Supports dynamic timeline overlap (cross-talking) via positional tensor addition
+        instead of linear concatenation.
         """
         logger.info(f"Initiating spatial synthesis for {len(segments)} segments")
-        timeline: List[torch.Tensor] = []
+        
+        master_waveform = torch.zeros(2, 0)
+        current_sample = 0 
+        
+        valid_segments_processed = 0
         
         for i, seg in enumerate(segments):
             if not seg.path.exists():
@@ -142,6 +128,9 @@ class AudioEngine:
                 if sr != self.target_sample_rate:
                     resampler = torchaudio.transforms.Resample(sr, self.target_sample_rate)
                     waveform = resampler(waveform)
+                    
+                if use_hpf:
+                    waveform = torchaudio.functional.highpass_biquad(waveform, self.target_sample_rate, 80.0)
                 
                 waveform = self._apply_fades(waveform, seg.fade_in_ms, seg.fade_out_ms)
                 
@@ -161,23 +150,45 @@ class AudioEngine:
                 right_gain = math.sin(angle)
                 
                 stereo_waveform = torch.cat([waveform * left_gain, waveform * right_gain], dim=0)
-                timeline.append(stereo_waveform)
+
+                segment_length = stereo_waveform.shape[1]
+                required_length = current_sample + segment_length
+                
+                if required_length > master_waveform.shape[1]:
+                    pad_amount = required_length - master_waveform.shape[1]
+                    master_waveform = torch.nn.functional.pad(master_waveform, (0, pad_amount))
+                    
+                master_waveform[:, current_sample:required_length] += stereo_waveform
+                valid_segments_processed += 1
+                
+                delay_samples = int((seg.post_delay_ms / 1000.0) * self.target_sample_rate)
                 
                 if seg.post_delay_ms > 0:
                     gap = self._generate_room_tone(seg.post_delay_ms, seg.room_tone_level)
                     if gap.shape[0] == 1:
                         gap = gap.repeat(2, 1)
-                    timeline.append(gap)
+                    
+                    req_gap_len = current_sample + segment_length + delay_samples
+                    if req_gap_len > master_waveform.shape[1]:
+                        pad_amount = req_gap_len - master_waveform.shape[1]
+                        master_waveform = torch.nn.functional.pad(master_waveform, (0, pad_amount))
+                        
+                    master_waveform[:, current_sample + segment_length : req_gap_len] += gap
+                    
+                    current_sample += segment_length + delay_samples
+                else:
+                    current_sample += segment_length + delay_samples
+                    current_sample = max(0, current_sample)
+
             except Exception as e:
                 logger.error(f"Critical DSP failure on segment {i}: {str(e)}")
                 
-        if not timeline:
-            logger.error("Synthesis aborted: No valid audio segments to concatenate")
+        if valid_segments_processed == 0 or master_waveform.shape[1] == 0:
+            logger.error("Synthesis aborted: No valid audio segments to mix")
             return None
             
-        master = torch.cat(timeline, dim=1)
-        logger.info(f"Spatial synthesis successful: {master.shape[1]/self.target_sample_rate:.2f} seconds generated")
-        return master
+        logger.info(f"Spatial synthesis successful: {master_waveform.shape[1]/self.target_sample_rate:.2f} seconds generated")
+        return master_waveform
 
     def _apply_mastering_chain(
         self, 
@@ -219,7 +230,11 @@ class AudioEngine:
             
             input_stream = ffmpeg.input(str(input_path))
             
-            compressed = input_stream.filter(
+            stream_node = input_stream
+            if config.use_deesser:
+                stream_node = stream_node.filter('deesser')
+            
+            compressed = stream_node.filter(
                 'acompressor', 
                 threshold=threshold_linear, 
                 ratio=config.compressor_ratio,
@@ -283,7 +298,7 @@ class AudioEngine:
         logger.info(f"Starting project merge orchestration for {output_path.name}")
         
         try:
-            master_waveform = self._build_spatial_mix(segments)
+            master_waveform = self._build_spatial_mix(segments,use_hpf=mastering.use_hpf)
             if master_waveform is None:
                 return False
 

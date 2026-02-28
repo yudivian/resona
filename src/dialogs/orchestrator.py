@@ -441,7 +441,9 @@ class DialogOrchestrator:
         mastering_audio_config = MasteringAudioConfig(
             target_lufs=m_cfg.target_lufs,
             compressor_ratio=m_cfg.compressor_ratio,
-            compressor_threshold=m_cfg.compressor_threshold
+            compressor_threshold=m_cfg.compressor_threshold,
+            use_hpf=getattr(m_cfg, 'use_hpf', True),
+            use_deesser=getattr(m_cfg, 'use_deesser', True)
         )
 
         success = engine.merge_segments(segments, output_path, mastering=mastering_audio_config)

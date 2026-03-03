@@ -132,7 +132,7 @@ def render_books_editor(navigate_to: Callable[[str, Optional[str]], None]) -> No
         st.warning("🎛️ **Mastering Discrepancy Detected:** The scripts in this book have different mastering configurations (LUFS/Compression). The final audiobook might sound inconsistent in volume.")
 
     with st.container(border=True):
-        st.subheader("Global Metadata")
+        st.markdown("**Global Metadata**")
         c1, c2 = st.columns(2)
         with c1:
             state["title"] = st.text_input("AudioBook Title", value=state["title"])
@@ -141,7 +141,7 @@ def render_books_editor(navigate_to: Callable[[str, Optional[str]], None]) -> No
         with c2:
             state["description"] = st.text_area("Synopsis (Description)", value=state["description"], height=120)
 
-    st.subheader("Chapters")
+    st.markdown("**Chapters**")
     
     if not state["chapters"]:
         st.info("No chapters. Add one below.")

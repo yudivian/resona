@@ -67,8 +67,7 @@ def render_books_monitor(navigate_to: Callable[[str, Optional[str]], None]) -> N
 
     st.divider()
     
-    st.subheader("📖 Global Metadata")
-    with st.container(border=True):
+    with st.expander("**Global Metadata**",expanded=False):
         col_img, col_meta = st.columns([1, 3])
         
         with col_img:
@@ -91,67 +90,63 @@ def render_books_monitor(navigate_to: Callable[[str, Optional[str]], None]) -> N
                 st.markdown("**Synopsis:**")
                 st.write(book.definition.description)
 
-    st.divider()
-
-    st.subheader("📋 Chapters & Health Check")
+    with st.expander("**Chapters & Health Check**",expanded=False):
     
-    can_compile = True
-    manifest_chapters = []
-    
-    for i, chap in enumerate(book.definition.chapters):
-        script_data = scripts_dict.get(chap.script_id)
+        can_compile = True
+        manifest_chapters = []
         
-        with st.container(border=True):
-            c_info, c_status, c_action = st.columns([4, 2, 2], vertical_alignment="center")
+        for i, chap in enumerate(book.definition.chapters):
+            script_data = scripts_dict.get(chap.script_id)
             
-            with c_info:
-                st.markdown(f"**{i+1}. {chap.title}**")
-                if script_data:
-                    sc_name = script_data.get("definition", {}).get("name", "Unknown Script")
-                    st.caption(f"🔗 Linked to: *{sc_name}*")
-                else:
-                    st.caption("🔗 Linked to: ⚠️ DELETED SCRIPT")
-            
-            with c_status:
-                if not script_data:
-                    st.error("🔴 Broken Link")
-                    can_compile = False
-                else:
-                    sc_status = script_data.get("status")
-                    audio_rel_path = script_data.get("merged_audio_path") or script_data.get("master_path")
-                    
-                    if sc_status == "completed" and audio_rel_path:
-                        st.success("🟢 Audio Ready")
-                        
-                        abs_audio_path = Path(script_data.get("project_path")) / audio_rel_path
-                        manifest_chapters.append(
-                            Chapter(
-                                title=chap.title,
-                                author=chap.author,
-                                audio_path=abs_audio_path
-                            )
-                        )
-                    elif sc_status == "completed" and not audio_rel_path:
-                        st.warning("🟡 Missing Master Audio")
+            with st.container(border=True):
+                c_info, c_status, c_action = st.columns([4, 2, 2], vertical_alignment="center")
+                
+                with c_info:
+                    st.markdown(f"**{i+1}. {chap.title}**")
+                    if script_data:
+                        sc_name = script_data.get("definition", {}).get("name", "Unknown Script")
+                        st.caption(f"🔗 Linked to: *{sc_name}*")
+                    else:
+                        st.caption("🔗 Linked to: ⚠️ DELETED SCRIPT")
+                
+                with c_status:
+                    if not script_data:
+                        st.error("🔴 Broken Link")
                         can_compile = False
                     else:
-                        st.info(f"⏳ Status: {sc_status.capitalize()}")
-                        can_compile = False
+                        sc_status = script_data.get("status")
+                        audio_rel_path = script_data.get("merged_audio_path") or script_data.get("master_path")
                         
-            with c_action:
-                if script_data:
-                    if st.button("➡️ Go to Script", key=f"go_sc_{i}", width="stretch"):
-                        navigate_to("monitor", chap.script_id)
-                else:
-                    if st.button("✏️", help="Edit book", key=f"fix_{i}", width="stretch"):
-                         navigate_to("books_editor", book.id)
+                        if sc_status == "completed" and audio_rel_path:
+                            st.success("🟢 Audio Ready")
+                            
+                            abs_audio_path = Path(script_data.get("project_path")) / audio_rel_path
+                            manifest_chapters.append(
+                                Chapter(
+                                    title=chap.title,
+                                    author=chap.author,
+                                    audio_path=abs_audio_path
+                                )
+                            )
+                        elif sc_status == "completed" and not audio_rel_path:
+                            st.warning("🟡 Missing Master Audio")
+                            can_compile = False
+                        else:
+                            st.info(f"⏳ Status: {sc_status.capitalize()}")
+                            can_compile = False
+                            
+                with c_action:
+                    if script_data:
+                        if st.button("➡️ Go to Script", key=f"go_sc_{i}", width="stretch"):
+                            navigate_to("monitor", chap.script_id)
+                    else:
+                        if st.button("✏️", help="Edit book", key=f"fix_{i}", width="stretch"):
+                            navigate_to("books_editor", book.id)
 
-    if book.status == AudioBookStatus.OUTDATED:
-        st.warning("🟠 **Update Recommended:** Some scripts have been modified since the last compilation.")
+        if book.status == AudioBookStatus.OUTDATED:
+            st.warning("🟠 **Update Recommended:** Some scripts have been modified since the last compilation.")
 
-    st.divider()
-
-    st.subheader("Assembly Engine")
+    st.markdown("**Assembly Engine**")
     
     if st.button("🎬 Compile AudioBook (.m4b)", type="primary", width="stretch", disabled=not can_compile):
         
@@ -188,7 +183,7 @@ def render_books_monitor(navigate_to: Callable[[str, Optional[str]], None]) -> N
     st.divider()
 
     if book.output_m4b_path:
-        st.subheader("Final Output")
+        st.markdown("**Final Output**")
         
         m4b_full_path = Path(book.project_path) / book.output_m4b_path
         

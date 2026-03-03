@@ -97,31 +97,31 @@ def render_books_dashboard(navigate_to: Callable[[str, Optional[str]], None]) ->
             navigate_to("books_create")
         return
 
-    search_query = st.text_input("🔍 Search AudioBooks by title or author...", "").lower()
-    st.divider()
+    with st.container(border=True):
+        search_query = st.text_input("🔍 Search AudioBooks by title or author...", "").lower()
 
-    filtered_books = []
-    for book_id, book_data in books_dict.items():
-        try:
-            book = AudioBookProject(**book_data)
-        except Exception:
-            continue
-            
-        if search_query and search_query not in book.definition.title.lower() and search_query not in book.definition.author.lower():
-            continue
-            
-        filtered_books.append(book)
+        filtered_books = []
+        for book_id, book_data in books_dict.items():
+            try:
+                book = AudioBookProject(**book_data)
+            except Exception:
+                continue
+                
+            if search_query and search_query not in book.definition.title.lower() and search_query not in book.definition.author.lower():
+                continue
+                
+            filtered_books.append(book)
 
-    filtered_books.sort(key=lambda x: x.created_at, reverse=True)
+        filtered_books.sort(key=lambda x: x.created_at, reverse=True)
 
-    total_books = len(filtered_books)
-    pages = (total_books - 1) // PROJECTS_PER_PAGE + 1 if total_books > 0 else 1
-    
-    if "books_dash_page" not in st.session_state:
-        st.session_state.books_dash_page = 1
+        total_books = len(filtered_books)
+        pages = (total_books - 1) // PROJECTS_PER_PAGE + 1 if total_books > 0 else 1
         
-    if st.session_state.books_dash_page > pages:
-        st.session_state.books_dash_page = max(1, pages)
+        if "books_dash_page" not in st.session_state:
+            st.session_state.books_dash_page = 1
+            
+        if st.session_state.books_dash_page > pages:
+            st.session_state.books_dash_page = max(1, pages)
         
     start_idx = (st.session_state.books_dash_page - 1) * PROJECTS_PER_PAGE
     page_books = filtered_books[start_idx : start_idx + PROJECTS_PER_PAGE]

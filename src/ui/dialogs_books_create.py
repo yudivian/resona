@@ -96,7 +96,7 @@ def render_books_create(navigate_to: Callable[[str, Optional[str]], None]) -> No
         st.session_state.temp_book_chapters = []
 
     with st.container(border=True):
-        st.subheader("Global Metadata")
+        st.markdown("**Global Metadata**")
         col1, col2 = st.columns(2)
         with col1:
             b_title = st.text_input("AudioBook Title", placeholder="e.g. The Martian Chronicles")
@@ -117,7 +117,7 @@ def render_books_create(navigate_to: Callable[[str, Optional[str]], None]) -> No
     if len(mastering_configs) > 1:
         st.warning("🎛️ **Mastering Discrepancy Detected:** The selected scripts have different mastering configurations (LUFS/Compression). The final audiobook might sound inconsistent in volume.")
 
-    st.subheader("Chapters List")
+    st.markdown("**Chapters List**")
     
     if not st.session_state.temp_book_chapters:
         st.info("No chapters added yet. Click below to add your first chapter.")

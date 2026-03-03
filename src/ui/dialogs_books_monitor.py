@@ -56,13 +56,13 @@ def render_books_monitor(navigate_to: Callable[[str, Optional[str]], None]) -> N
     with col1:
         st.header(f"🎧 Monitor: {book.definition.title}")
     with col2:
-        if st.button("⬅️ Back", use_container_width=True):
+        if st.button("⬅️", help="Go back", use_container_width=True):
             navigate_to("books_dashboard")
     with col3:
-        if st.button("✏️ Edit", use_container_width=True):
+        if st.button("✏️", help="Edit book", use_container_width=True):
             navigate_to("books_editor", book.id)
     with col4:
-        if st.button("🗑️ Delete", use_container_width=True):
+        if st.button("🗑️",help="Delete book", use_container_width=True):
             delete_book_from_monitor(book.id, book.definition.title, navigate_to)
 
     st.divider()
@@ -97,7 +97,6 @@ def render_books_monitor(navigate_to: Callable[[str, Optional[str]], None]) -> N
                     if sc_status == "completed" and audio_rel_path:
                         st.success("🟢 Audio Ready")
                         
-                        # Añadir al manifiesto si está listo
                         abs_audio_path = Path(script_data.get("project_path")) / audio_rel_path
                         manifest_chapters.append(
                             Chapter(
@@ -118,7 +117,7 @@ def render_books_monitor(navigate_to: Callable[[str, Optional[str]], None]) -> N
                     if st.button("➡️ Go to Script", key=f"go_sc_{i}", use_container_width=True):
                         navigate_to("monitor", chap.script_id)
                 else:
-                    if st.button("✏️ Fix in Editor", key=f"fix_{i}", use_container_width=True):
+                    if st.button("✏️", help="Edit book", key=f"fix_{i}", use_container_width=True):
                          navigate_to("books_editor", book.id)
 
     if book.status == AudioBookStatus.OUTDATED:
@@ -141,7 +140,7 @@ def render_books_monitor(navigate_to: Callable[[str, Optional[str]], None]) -> N
             chapters=manifest_chapters
         )
         
-        with st.spinner("Ensamblando contenedor M4B y escribiendo metadatos..."):
+        with st.spinner("Assembling M4B container and writing metadata..."):
             result = AudiobookBuilder.compile(
                 manifest=manifest, 
                 output_dir=Path(book.project_path)

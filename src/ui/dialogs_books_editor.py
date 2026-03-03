@@ -113,7 +113,7 @@ def render_books_editor(navigate_to: Callable[[str, Optional[str]], None]) -> No
     with col_h1:
         st.header(f"✏️ Editing: {book.definition.title}")
     with col_h2:
-        if st.button("Cancel & Return", use_container_width=True):
+        if st.button("Cancel & Return", width="stretch"):
             del st.session_state.book_edit_state
             navigate_to("books_dashboard")
             return
@@ -206,7 +206,7 @@ def render_books_editor(navigate_to: Callable[[str, Optional[str]], None]) -> No
             with c3:
                 chap["author"] = st.text_input("Specific Author", value=chap["author"], key=f"aut_{ui_key}")
 
-    if st.button("➕ Add Chapter", use_container_width=True):
+    if st.button("➕ Add Chapter", width="stretch"):
         if available_scripts:
             first_script_id = list(available_scripts.keys())[0]
             state["chapters"].append({
@@ -234,7 +234,7 @@ def render_books_editor(navigate_to: Callable[[str, Optional[str]], None]) -> No
 
     f_col1, f_col2 = st.columns(2)
     with f_col1:
-        if st.button("💾 Save Changes", use_container_width=True):
+        if st.button("💾 Save Changes", width="stretch"):
             if valid:
                 if _apply_changes(book_id, state, available_scripts):
                     st.success("AudioBook updated successfully.")
@@ -244,7 +244,7 @@ def render_books_editor(navigate_to: Callable[[str, Optional[str]], None]) -> No
                 st.error(val_msg)
                 
     with f_col2:
-        if st.button("🚀 Save & Go to Monitor", type="primary", use_container_width=True):
+        if st.button("🚀 Save & Go to Monitor", type="primary", width="stretch"):
             if valid:
                 if _apply_changes(book_id, state, available_scripts):
                     del st.session_state.book_edit_state

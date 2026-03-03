@@ -188,7 +188,7 @@ def render_books_create(navigate_to: Callable[[str, Optional[str]], None]) -> No
                 st.text_input("Specific Author", placeholder="Optional", key=aut_key)
                 chap["author"] = st.session_state[aut_key]
 
-    if st.button("➕ Add Chapter", use_container_width=True):
+    if st.button("➕ Add Chapter", width="stretch"):
         first_script_id = list(available_scripts.keys())[0]
         st.session_state.temp_book_chapters.append({
             "_ui_id": str(uuid.uuid4()),
@@ -200,7 +200,7 @@ def render_books_create(navigate_to: Callable[[str, Optional[str]], None]) -> No
 
     st.divider()
 
-    if st.button("🚀 Create AudioBook & Go to Monitor", type="primary", use_container_width=True):
+    if st.button("🚀 Create AudioBook & Go to Monitor", type="primary", width="stretch"):
         if not b_title.strip():
             st.error("AudioBook title is required.")
         elif not st.session_state.temp_book_chapters:

@@ -68,7 +68,7 @@ def delete_book_dialog(book_id: str, book_title: str) -> None:
     
     col_a, col_b = st.columns(2)
     with col_a:
-        if st.button("Yes, Delete", type="primary", use_container_width=True):
+        if st.button("Yes, Delete", type="primary", width="stretch"):
             db = st.session_state.db
             books_dict = db.dict("audiobooks")
             if book_id in books_dict:
@@ -77,7 +77,7 @@ def delete_book_dialog(book_id: str, book_title: str) -> None:
             time.sleep(0.5)
             st.rerun()
     with col_b:
-        if st.button("Cancel", use_container_width=True):
+        if st.button("Cancel", width="stretch"):
             st.rerun()
 
 
@@ -156,27 +156,27 @@ def render_books_dashboard(navigate_to: Callable[[str, Optional[str]], None]) ->
                 
                 with b_cols[0]:
                     can_compile = current_status in [AudioBookStatus.READY, AudioBookStatus.OUTDATED]
-                    if st.button("🎬",help="View book", key=f"mon_{book.id}", use_container_width=True, disabled=not can_compile):
+                    if st.button("🎬",help="View book", key=f"mon_{book.id}", width="stretch", disabled=not can_compile):
                         navigate_to("books_monitor", book.id)
                         
                 with b_cols[1]:
-                    if st.button("✏️",help="Edit book", key=f"ed_{book.id}", use_container_width=True):
+                    if st.button("✏️",help="Edit book", key=f"ed_{book.id}", width="stretch"):
                         navigate_to("books_editor", book.id)
                         
                 with b_cols[2]:
-                    if st.button("🗑️",help="Delete book", key=f"del_{book.id}", use_container_width=True):
+                    if st.button("🗑️",help="Delete book", key=f"del_{book.id}", width="stretch"):
                         delete_book_dialog(book.id, book.definition.title)
 
     if pages > 1:
         st.divider()
         p_c1, p_c2, p_c3 = st.columns([1, 2, 1])
         with p_c1:
-            if st.button("< Previous", key="prev_books_page", disabled=st.session_state.books_dash_page <= 1, use_container_width=True):
+            if st.button("< Previous", key="prev_books_page", disabled=st.session_state.books_dash_page <= 1, width="stretch"):
                 st.session_state.books_dash_page -= 1
                 st.rerun()
         with p_c2: 
             st.markdown(f"<div style='text-align: center'>Page {st.session_state.books_dash_page} of {pages}</div>", unsafe_allow_html=True)
         with p_c3:
-            if st.button("Next >", key="next_books_page", disabled=st.session_state.books_dash_page >= pages, use_container_width=True):
+            if st.button("Next >", key="next_books_page", disabled=st.session_state.books_dash_page >= pages, width="stretch"):
                 st.session_state.books_dash_page += 1
                 st.rerun()

@@ -18,7 +18,7 @@ def delete_book_from_monitor(book_id: str, book_title: str, navigate_to: Callabl
     
     col_a, col_b = st.columns(2)
     with col_a:
-        if st.button("Yes, Delete", type="primary", use_container_width=True):
+        if st.button("Yes, Delete", type="primary", width="stretch"):
             db = st.session_state.db
             books_dict = db.dict("audiobooks")
             if book_id in books_dict:
@@ -27,7 +27,7 @@ def delete_book_from_monitor(book_id: str, book_title: str, navigate_to: Callabl
             time.sleep(0.5)
             navigate_to("books_dashboard")
     with col_b:
-        if st.button("Cancel", use_container_width=True):
+        if st.button("Cancel", width="stretch"):
             st.rerun()
 
 
@@ -56,14 +56,40 @@ def render_books_monitor(navigate_to: Callable[[str, Optional[str]], None]) -> N
     with col1:
         st.header(f"🎧 Monitor: {book.definition.title}")
     with col2:
-        if st.button("⬅️", help="Go back", use_container_width=True):
+        if st.button("⬅️", help="Go back", width="stretch"):
             navigate_to("books_dashboard")
     with col3:
-        if st.button("✏️", help="Edit book", use_container_width=True):
+        if st.button("✏️", help="Edit book", width="stretch"):
             navigate_to("books_editor", book.id)
     with col4:
-        if st.button("🗑️",help="Delete book", use_container_width=True):
+        if st.button("🗑️",help="Delete book", width="stretch"):
             delete_book_from_monitor(book.id, book.definition.title, navigate_to)
+
+    st.divider()
+    
+    st.subheader("📖 Global Metadata")
+    with st.container(border=True):
+        col_img, col_meta = st.columns([1, 3])
+        
+        with col_img:
+            if book.definition.cover_path:
+                img_path = Path(book.project_path) / book.definition.cover_path
+                if img_path.exists():
+                    st.image(str(img_path), width="stretch")
+                else:
+                    st.warning("Cover image file is missing from disk.")
+            else:
+                st.info("No cover art provided.")
+                
+        with col_meta:
+            st.markdown(f"**Author / Compiler:** {book.definition.author}")
+            
+            if book.definition.copyright:
+                st.markdown(f"**Copyright:** {book.definition.copyright}")
+                
+            if book.definition.description:
+                st.markdown("**Synopsis:**")
+                st.write(book.definition.description)
 
     st.divider()
 
@@ -114,10 +140,10 @@ def render_books_monitor(navigate_to: Callable[[str, Optional[str]], None]) -> N
                         
             with c_action:
                 if script_data:
-                    if st.button("➡️ Go to Script", key=f"go_sc_{i}", use_container_width=True):
+                    if st.button("➡️ Go to Script", key=f"go_sc_{i}", width="stretch"):
                         navigate_to("monitor", chap.script_id)
                 else:
-                    if st.button("✏️", help="Edit book", key=f"fix_{i}", use_container_width=True):
+                    if st.button("✏️", help="Edit book", key=f"fix_{i}", width="stretch"):
                          navigate_to("books_editor", book.id)
 
     if book.status == AudioBookStatus.OUTDATED:
@@ -127,7 +153,7 @@ def render_books_monitor(navigate_to: Callable[[str, Optional[str]], None]) -> N
 
     st.subheader("Assembly Engine")
     
-    if st.button("🎬 Compile AudioBook (.m4b)", type="primary", use_container_width=True, disabled=not can_compile):
+    if st.button("🎬 Compile AudioBook (.m4b)", type="primary", width="stretch", disabled=not can_compile):
         
         cover_abs_path = Path(book.project_path) / book.definition.cover_path if book.definition.cover_path else None
         
@@ -174,7 +200,7 @@ def render_books_monitor(navigate_to: Callable[[str, Optional[str]], None]) -> N
                     if book.definition.cover_path:
                         img_path = Path(book.project_path) / book.definition.cover_path
                         if img_path.exists():
-                            st.image(str(img_path), use_container_width=True)
+                            st.image(str(img_path), width="stretch")
                         else:
                             st.markdown("📄")
                     else:
@@ -192,7 +218,7 @@ def render_books_monitor(navigate_to: Callable[[str, Optional[str]], None]) -> N
                         file_name=book.output_m4b_path, 
                         mime="audio/mp4", 
                         key=f"dl_m4b_{book.id}", 
-                        use_container_width=True
+                        width="stretch"
                     )
                     
                     st.caption(f"Last compiled: {book.last_compiled_at.strftime('%Y-%m-%d %H:%M:%S UTC')}")

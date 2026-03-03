@@ -116,19 +116,19 @@ def main() -> None:
         st.divider()
         
         st.subheader("🎬 Scripts & Scenes")
-        if st.button("🏠 Scripts Dashboard", use_container_width=True):
+        if st.button("🏠 Scripts Dashboard", width="stretch"):
             navigate_to("dashboard")
-        if st.button("➕ New Script", use_container_width=True, type="primary"):
+        if st.button("➕ New Script", width="stretch", type="primary"):
             navigate_to("create")
-        if st.button("📥 Import Script", use_container_width=True):
+        if st.button("📥 Import Script", width="stretch"):
             import_dialog()
             
         st.divider()
         
         st.subheader("📚 AudioBooks")
-        if st.button("📚 Bookshelf", use_container_width=True):
+        if st.button("📚 Bookshelf", width="stretch"):
             navigate_to("books_dashboard")
-        if st.button("➕ New AudioBook", use_container_width=True, type="primary"):
+        if st.button("➕ New AudioBook", width="stretch", type="primary"):
             navigate_to("books_create")
 
     view = st.session_state.current_view

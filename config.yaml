@@ -17,6 +17,7 @@ paths:
   emotionspace_dir: "emotionspace"
   apispace_dir: "apispace"
   dialogspace_dir: "dialogspace"
+  bookspace_dir: "bookspace"
 
 models:
   tts:

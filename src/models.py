@@ -1,9 +1,11 @@
-import time
 import uuid
 import json
+import time
 from typing import List, Dict, Any, Optional
 from enum import Enum
 from pydantic import BaseModel, Field, ConfigDict
+from datetime import datetime, timezone
+
 
 class ComputeConfig(BaseModel):
     """
@@ -34,6 +36,7 @@ class PathsConfig(BaseModel):
     emotionspace_dir: str
     apispace_dir: str
     dialogspace_dir: str
+    bookspace_dir: str
 
 class FineTuneConfig(BaseModel):
     """
@@ -511,5 +514,60 @@ class ProjectListResponse(BaseModel):
     """Response envelope for project discovery."""
     total: int
     projects: List[ProjectListItem]
+
+class AudioBookStatus(str, Enum):
+    """Execution and health states for an Audiobook project."""
+    READY = "ready"           # All scripts exist, are compiled, and are unmodified.
+    OUTDATED = "outdated"     # A linked script was modified after the book was compiled.
+    INCOMPLETE = "incomplete" # One or more linked scripts lack a generated master audio.
+    INVALID = "invalid"       # A linked script ID no longer exists in the database.
+
+
+class AudioBookChapter(BaseModel):
+    """
+    A 'Soft Link' representing a chapter. 
+    It doesn't store audio, just the pointer to a DialogProject and its local metadata.
+    """
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    script_id: str = Field(..., description="The unique ID of the linked DialogProject.")
+    title: str = Field(..., description="The chapter title (can be different from the script's internal name).")
+    author: Optional[str] = Field(default=None, description="Specific author for this chapter (for anthologies).")
+
+
+class AudioBookDefinition(BaseModel):
+    """Core metadata and structure of the Audiobook."""
+    title: str = Field(..., description="Global title of the audiobook.")
+    author: str = Field(default="Various Authors", description="Global author or compiler.")
+    description: Optional[str] = Field(default=None, description="Synopsis.")
+    copyright: Optional[str] = Field(default=None, description="Copyright notice.")
+    cover_path: Optional[str] = Field(default=None, description="Relative path to the uploaded cover image.")
+    chapters: List[AudioBookChapter] = Field(default_factory=list, description="Ordered list of linked scripts.")
+
+
+class AudioBookProject(BaseModel):
+    """
+    The root entity for an Audiobook stored in the database.
+    """
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    project_path: str = Field(..., description="Absolute path to the book's root folder.")
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    
+    last_compiled_at: Optional[datetime] = Field(
+        default=None, 
+        description="Timestamp of the last successful .m4b generation."
+    )
+    
+    status: AudioBookStatus = Field(default=AudioBookStatus.INCOMPLETE)
+    definition: AudioBookDefinition
+    
+    output_m4b_path: Optional[str] = Field(
+        default=None, 
+        description="Relative path to the compiled .m4b container."
+    )
+    
+    def touch(self):
+        """Updates the modification timestamp."""
+        self.updated_at = datetime.now(timezone.utc)
     
 

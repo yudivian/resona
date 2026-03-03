@@ -15,10 +15,15 @@ from src.ui.dialogs_create import render_create
 from src.ui.dialogs_editor import render_editor
 from src.ui.dialogs_monitor import render_monitor
 
+from src.ui.dialogs_books_dashboard import render_books_dashboard
+from src.ui.dialogs_books_create import render_books_create
+from src.ui.dialogs_books_editor import render_books_editor
+from src.ui.dialogs_books_monitor import render_books_monitor
+
 
 MAX_DIALOG_LINES = 50
 POLLING_INTERVAL_SEC = 10.0
-PROJECTS_PER_PAGE = 8
+PROJECTS_PER_PAGE = 3
 LINES_PER_PAGE = 10
 
 @st.dialog("Import Project from JSON")
@@ -110,17 +115,21 @@ def main() -> None:
         st.title("🎙️ DialogSpace")
         st.divider()
         
-        st.subheader("Navigation")
-        if st.button("🏠 Dashboard", use_container_width=True):
+        st.subheader("🎬 Scripts & Scenes")
+        if st.button("🏠 Scripts Dashboard", use_container_width=True):
             navigate_to("dashboard")
+        if st.button("➕ New Script", use_container_width=True, type="primary"):
+            navigate_to("create")
+        if st.button("📥 Import Script", use_container_width=True):
+            import_dialog()
             
         st.divider()
-        st.subheader("Global Actions")
-        if st.button("➕ New Project", use_container_width=True, type="primary"):
-            navigate_to("create")
-            
-        if st.button("📥 Import Project", use_container_width=True):
-            import_dialog()
+        
+        st.subheader("📚 AudioBooks")
+        if st.button("📚 Bookshelf", use_container_width=True):
+            navigate_to("books_dashboard")
+        if st.button("➕ New AudioBook", use_container_width=True, type="primary"):
+            navigate_to("books_create")
 
     view = st.session_state.current_view
     if view == "dashboard":
@@ -131,6 +140,14 @@ def main() -> None:
         render_editor(navigate_to)
     elif view == "monitor":
         render_monitor(navigate_to)
+    elif view == "books_dashboard":
+        render_books_dashboard(navigate_to)
+    elif view == "books_create":
+        render_books_create(navigate_to)
+    elif view == "books_editor":
+        render_books_editor(navigate_to)
+    elif view == "books_monitor":
+        render_books_monitor(navigate_to)
     else:
         navigate_to("dashboard")
 

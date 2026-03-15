@@ -79,7 +79,7 @@ def render_editor(navigate_to: Callable[[str, Optional[str]], None]) -> None:
         navigate_to (Callable[[str, Optional[str]], None]): The routing function used
                                                             to transition between views.
     """
-    from src.app_dialogs import MAX_DIALOG_LINES
+    from src.app_dialogs import MAX_DIALOG_LINES, LINES_PER_PAGE
 
     project_id = st.session_state.get("selected_project_id")
     if not project_id:
@@ -253,7 +253,31 @@ def render_editor(navigate_to: Callable[[str, Optional[str]], None]) -> None:
                     )
 
         st.markdown(f"**Script Composition ({line_count}/{MAX_DIALOG_LINES})**")
-        for i, line in enumerate(state["definition"].get("script", [])):
+        
+        # --- LÓGICA DE PAGINACIÓN ---
+        script_lines = state["definition"].get("script", [])
+        total_lines = len(script_lines)
+        
+        if "editor_page" not in st.session_state:
+            st.session_state.editor_page = 1
+            
+        pages = max(1, (total_lines - 1) // LINES_PER_PAGE + 1) if total_lines > 0 else 1
+        
+        if st.session_state.editor_page > pages:
+            st.session_state.editor_page = pages
+            
+        start_idx = (st.session_state.editor_page - 1) * LINES_PER_PAGE
+        end_idx = min(start_idx + LINES_PER_PAGE, total_lines)
+        
+        page_lines = script_lines[start_idx:end_idx]
+        
+        if total_lines > 0:
+            st.caption(f"Showing lines {start_idx + 1} to {end_idx} of {total_lines}")
+        # ----------------------------
+
+        for local_i, line in enumerate(page_lines):
+            i = start_idx + local_i  # Índice absoluto para las llaves
+            
             with st.container(border=True):
                 row = st.columns([1.5, 0.7, 1.5, 1.2, 0.4])
                 with row[0]:
@@ -433,28 +457,50 @@ def render_editor(navigate_to: Callable[[str, Optional[str]], None]) -> None:
                     disabled=is_locked,
                 )
 
+        # --- BOTÓN DE AÑADIR (SOLO EN LA ÚLTIMA PÁGINA) ---
         if line_count < MAX_DIALOG_LINES:
-            if st.button("➕ Add Line", use_container_width=True, disabled=is_locked):
-                new_line = {
-                    "id": str(uuid.uuid4()),
-                    "index": line_count,
-                    "voice_id": list(voice_map.keys())[0],
-                    "text": "",
-                    "language": state["definition"].get("default_language", "es"),
-                    "emotion": None,
-                    "intensity": None,
-                    "scene": "",
-                    "scene_location": "",
-                    "post_delay_ms": 400,
-                    "fade_in_ms": 50,
-                    "fade_out_ms": 50,
-                    "room_tone_level": 0.0001,
-                    "gain_db": 0.0,
-                    "depth": 0.0,
-                    "post_delay_ms": 400,
-                }
-                state["definition"]["script"].append(new_line)
-                st.rerun()
+            if st.session_state.editor_page == pages:
+                if st.button("➕ Add Line", use_container_width=True, disabled=is_locked):
+                    new_line = {
+                        "id": str(uuid.uuid4()),
+                        "index": line_count,
+                        "voice_id": list(voice_map.keys())[0],
+                        "text": "",
+                        "language": state["definition"].get("default_language", "es"),
+                        "emotion": None,
+                        "intensity": None,
+                        "scene": "",
+                        "scene_location": "",
+                        "post_delay_ms": 400,
+                        "fade_in_ms": 50,
+                        "fade_out_ms": 50,
+                        "room_tone_level": 0.0001,
+                        "gain_db": 0.0,
+                        "depth": 0.0,
+                        "post_delay_ms": 400,
+                    }
+                    state["definition"]["script"].append(new_line)
+                    
+                    # Recalcular páginas y mandar al usuario a la nueva página si se crea una
+                    new_total = len(state["definition"]["script"])
+                    new_pages = max(1, (new_total - 1) // LINES_PER_PAGE + 1)
+                    st.session_state.editor_page = new_pages
+                    st.rerun()
+
+        # --- CONTROLES DE PAGINACIÓN ---
+        if pages > 1:
+            st.divider()
+            p_c1, p_c2, p_c3 = st.columns([1, 2, 1])
+            with p_c1:
+                if st.button("< Previous Page", disabled=st.session_state.editor_page <= 1, use_container_width=True):
+                    st.session_state.editor_page -= 1
+                    st.rerun()
+            with p_c2:
+                st.markdown(f"<div style='text-align: center'>Page {st.session_state.editor_page} of {pages}</div>", unsafe_allow_html=True)
+            with p_c3:
+                if st.button("Next Page >", disabled=st.session_state.editor_page >= pages, use_container_width=True):
+                    st.session_state.editor_page += 1
+                    st.rerun()
 
     st.divider()
     f_col1, f_col2 = st.columns(2)

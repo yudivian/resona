@@ -1,4 +1,9 @@
 import sys
+import asyncio
+
+if sys.platform != 'win32':
+    asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
+
 import os
 import logging
 import streamlit as st

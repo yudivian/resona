@@ -28,7 +28,7 @@ class DialogClusterer:
     memory-safe batches.
     """
 
-    def build_clusters(self, project: DialogProject, max_batch_size: int = 8) -> List[DialogCluster]:
+    def build_clusters(self, project: DialogProject, max_batch_size: int = 4) -> List[DialogCluster]:
         """
         Groups pending line states into homogenous clusters using precise database IDs,
         enforcing a maximum batch size to prevent GPU out-of-memory errors.

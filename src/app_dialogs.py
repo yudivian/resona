@@ -1,3 +1,9 @@
+import sys
+import asyncio
+
+if sys.platform != 'win32':
+    asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
+
 import streamlit as st
 import json
 import time
@@ -21,7 +27,7 @@ from src.ui.dialogs_books_editor import render_books_editor
 from src.ui.dialogs_books_monitor import render_books_monitor
 
 
-MAX_DIALOG_LINES = 50
+MAX_DIALOG_LINES = 500
 POLLING_INTERVAL_SEC = 10.0
 PROJECTS_PER_PAGE = 3
 LINES_PER_PAGE = 10

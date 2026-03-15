@@ -8,6 +8,7 @@ import time
 import json
 import zipfile
 import io
+import base64
 import psutil
 from pathlib import Path
 from typing import Callable, Optional
@@ -56,7 +57,12 @@ def render_monitor(navigate_to: Callable[[str, Optional[str]], None]) -> None:
                                                             to transition between views.
     """
     from src.app_dialogs import LINES_PER_PAGE, POLLING_INTERVAL_SEC
-
+    
+    if "playing_audio_id" not in st.session_state:
+        st.session_state["playing_audio_id"] = None
+    if "playing_master_id" not in st.session_state:
+        st.session_state["playing_master_id"] = None
+    
     project_id = st.session_state.get("selected_project_id")
     if not project_id:
         st.error("No project selected.")
@@ -204,13 +210,42 @@ def render_monitor(navigate_to: Callable[[str, Optional[str]], None]) -> None:
         if master_full_path.exists():
             with st.container(border=True):
                 st.markdown("**Master Audio Output**")
-                with open(master_full_path, "rb") as f: 
-                    master_bytes = f.read()
-                st.audio(master_bytes, format="audio/wav")
+                
+                # --- FIX: Carga Perezosa (Lazy Load) para el Master ---
+                if st.session_state.get("playing_master_id") != project.id:
+                    if st.button("▶️ Play Master Audio", key=f"play_master_{project.id}", type="primary", use_container_width=True):
+                        st.session_state["playing_master_id"] = project.id
+                        st.rerun()
+                else:
+                    if st.button("⏹️ Close Master Player", key=f"stop_master_{project.id}", use_container_width=True):
+                        st.session_state["playing_master_id"] = None
+                        st.rerun()
+                        
+                    with st.spinner("Loading master audio into memory..."):
+                        audio_played = False
+                        
+                        # Optimización: Priorizar el archivo MP3 (mucho más ligero) en Base64
+                        if mergedmp3_path_str:
+                            mastermp3_full_path = Path(project.project_path) / mergedmp3_path_str
+                            if mastermp3_full_path.exists():
+                                with open(mastermp3_full_path, "rb") as f:
+                                    mp3_bytes = f.read()
+                                b64_mp3 = base64.b64encode(mp3_bytes).decode()
+                                st.markdown(f'<audio controls autoplay src="data:audio/mpeg;base64,{b64_mp3}" style="width: 100%;"></audio>', unsafe_allow_html=True)
+                                audio_played = True
+                        
+                        # Respaldo: Si el MP3 no existe o falló, reproducimos el WAV en Base64
+                        if not audio_played:
+                            with open(master_full_path, "rb") as f: 
+                                master_bytes = f.read()
+                            b64_wav = base64.b64encode(master_bytes).decode()
+                            st.markdown(f'<audio controls autoplay src="data:audio/wav;base64,{b64_wav}" style="width: 100%;"></audio>', unsafe_allow_html=True)
+                # ------------------------------------------------------
+                
                 mc1, mc2 = st.columns([1, 1], vertical_alignment="center")
                 with mc1:                    
-                    with open(master_full_path, "rb") as f: master_bytes = f.read()
-                    st.download_button(label="⬇️ WAV", data=master_bytes, file_name=f"master_{project.definition.name.replace(' ', '_')}.wav", mime="audio/wav", key=f"dl_master_{project.id}", use_container_width=True)
+                    with open(master_full_path, "rb") as f: master_bytes_dl = f.read()
+                    st.download_button(label="⬇️ WAV", data=master_bytes_dl, file_name=f"master_{project.definition.name.replace(' ', '_')}.wav", mime="audio/wav", key=f"dl_master_{project.id}", use_container_width=True)
                 with mc2:
                     if mergedmp3_path_str:
                         mastermp3_full_path = Path(project.project_path) / mergedmp3_path_str
@@ -315,7 +350,23 @@ def render_monitor(navigate_to: Callable[[str, Optional[str]], None]) -> None:
                     with st.expander("🔊 Generated Audio", expanded=True):
                         ac1, ac2 = st.columns([5, 1], vertical_alignment="center")
                         with ac1:
-                            st.audio(str(audio_file_path))
+                            # --- FIX: Lazy Load Blindado para las líneas ---
+                            if st.session_state.get("playing_audio_id") != line.id:
+                                if st.button("▶️ Play Audio", key=f"play_{line.id}"):
+                                    st.session_state["playing_audio_id"] = line.id
+                                    st.rerun()
+                            else:
+                                c_play_stop, c_player = st.columns([1, 4], vertical_alignment="center")
+                                with c_play_stop:
+                                    if st.button("⏹️ Close", key=f"stop_{line.id}", use_container_width=True):
+                                        st.session_state["playing_audio_id"] = None
+                                        st.rerun()
+                                with c_player:
+                                    with open(audio_file_path, "rb") as f: 
+                                        audio_bytes_play = f.read()
+                                    b64_audio = base64.b64encode(audio_bytes_play).decode()
+                                    st.markdown(f'<audio controls autoplay src="data:audio/wav;base64,{b64_audio}" style="width: 100%;"></audio>', unsafe_allow_html=True)
+                            # ---------------
                         with ac2:
                             with open(audio_file_path, "rb") as f: audio_bytes = f.read()
                             st.download_button(label="⬇️ WAV", data=audio_bytes, file_name=f"line_{l_state.index + 1}.wav", mime="audio/wav", key=f"dl_{line.id}", use_container_width=True)

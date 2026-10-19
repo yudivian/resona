@@ -205,3 +205,17 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# --- Resona local data & workspaces (no versionar) ---
+data/
+bookspace/
+dialogspace/
+emotionspace/
+apispace/
+tunespace/
+temp_poc_emotions/
+.directory
+src/.directory
+
+# --- Artefactos generados por tests ---
+tests/batch_output_temp/
